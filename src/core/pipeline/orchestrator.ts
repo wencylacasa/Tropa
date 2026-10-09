@@ -3,6 +3,7 @@ import { matchRules } from '../intents/rules';
 import type { ParsedCommand } from '../intents/types';
 import { parseYesNo, type YesNo } from '../intents/yesNo';
 import { runCallFlow } from '../system/callFlow';
+import { runSosFlow, REPLY_SOS_NO_CONTACTS } from '../system/sosFlow';
 import type { Contact } from '../system/contactMatch';
 import { verifyWakeWord } from '../wake/verify';
 import { DEFAULT_WAKE_WORDS, type WakeWord } from '../wake/wakeWords';
@@ -65,6 +66,7 @@ export class Orchestrator {
 
     let outcome: TriggerOutcome;
     try {
+      this.ports.audioFocus?.request();
       await this.ports.detector.pause();
       outcome = await this.run();
     } catch (error) {
@@ -76,6 +78,7 @@ export class Orchestrator {
       } catch {
         // Nothing useful to do; the Home screen shows detector status.
       }
+      this.ports.audioFocus?.abandon();
       this.busy = false;
     }
 
@@ -133,6 +136,9 @@ export class Orchestrator {
       const call = await this.runCall(parsed.target);
       reply = call?.reply ?? null;
       dial = call?.dial ?? null;
+    } else if (parsed?.intent === 'sos_alert') {
+      const sos = await this.runSos();
+      reply = sos?.reply ?? null;
     } else if (parsed) {
       reply = await runHandler(parsed, {
         now: ports.now,
@@ -189,6 +195,23 @@ export class Orchestrator {
     return runCallFlow(target, {
       getContacts: () => contacts.getContacts(),
       confirm: (prompt) => this.listenYesNo(prompt),
+    });
+  }
+
+  /** Null when SOS ports are missing. */
+  private async runSos() {
+    const { getEmergencyContacts, getLocation, sendSms } = this.ports;
+    if (!getEmergencyContacts || !getLocation || !sendSms) {
+      return { reply: REPLY_SOS_NO_CONTACTS };
+    }
+    return runSosFlow({
+      getEmergencyContacts,
+      getLocation,
+      sendSms,
+      listenForCancel: async (prompt) => {
+        const answer = await this.listenYesNo(prompt);
+        return answer === 'no'; // 'no' or 'cancel' (handled by parseYesNo)
+      },
     });
   }
 

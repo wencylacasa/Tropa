@@ -14,11 +14,12 @@ Legend: [ ] todo, [x] done. Work top to bottom; each milestone ends with `npx ts
 - [ ] Read SDK 57 docs (`docs.expo.dev/versions/v57.0.0/`) + `llms.txt` for: config plugins, `expo-file-system`, `expo-speech`, `expo-contacts`, `expo-location`, `expo-battery`, dev builds
 - [ ] Check `llama.rn`, `whisper.rn`, `react-native-vosk`, mic-capture lib for RN 0.86 / new-arch compatibility; pick versions
 - [x] Set `android.package` (e.g. `com.wenz.tropa`); keep name/slug/scheme as Tropa
-- [ ] Remove starter demo content (explore tab, animated icon, hint row, web badge)
+- [x] Remove starter demo content (explore tab, animated icon, hint row, web badge)
+- [x] Local Expo module `modules/tropa-native` (dial, silent SMS, foreground service, audio focus, battery exemption). Loaded with `requireOptionalNativeModule`, so it is `null` in Expo Go / web / Jest; dial and SMS throw through `requireTropaNative()`, audio focus and battery checks degrade to no-ops. NOT built yet: confirm it compiles in the first dev build (androidx.core dependency for `NotificationCompat`)
 - [ ] Install deps with `npx expo install`
 - [x] Add Jest (`jest-expo`) + `npm test` script (installed; `@/` alias mapped; first full run passed)
 - [x] Add Android permissions in `app.json`: RECORD_AUDIO, READ_CONTACTS, CALL_PHONE, SEND_SMS, ACCESS_FINE_LOCATION, FOREGROUND_SERVICE, FOREGROUND_SERVICE_MICROPHONE, POST_NOTIFICATIONS
-- [ ] Add config plugin(s) for foreground service type `microphone`
+- [x] Add config plugin(s) for foreground service type `microphone` (`withForegroundService.js`; check the generated manifest after prebuild)
 - [~] Create `src/core/` folder skeleton from PLAN.md (done so far: format, wake, intents/handlers; rest created as each module is built)
 - [ ] Confirm `npx expo prebuild --platform android` generates cleanly (then leave `android/` ignored)
 - [ ] First dev build installs and launches on a device
@@ -41,11 +42,13 @@ Device pieces:
 - [x] Model manager: `core/models/manager.ts` (path lookup for Whisper tiny/base + Qwen; only an exact-size file counts as installed; flags English-only Whisper; `readiness()` for the first-launch gate) + tests. Files live in `<document dir>/models/`: `ggml-tiny.bin`, `ggml-base.bin`, `Qwen3-0.6B-Q4_K_M.gguf`. Sizes, SHA-256 and pinned Hugging Face URLs come from the HF API (ggerganov/whisper.cpp, unsloth/Qwen3-0.6B-GGUF). Still to confirm on device: whisper.rn accepting the plain path
 - [x] Model downloader (the on-device download): `core/models/download.ts` + `sha256.ts` + tests. Wi-Fi gate (mobile data only if allowed), downloads to `<file>.part`, checks exact size then streaming SHA-256, only then renames into place; cancel via AbortSignal. Native adapter `fileModelFiles.ts` (expo-file-system download task) is NOT unit-tested
 - [ ] Downloader on device: confirm the HF redirect to its CDN is followed, time the JS SHA-256 on an old phone (offer `skipChecksum` if too slow), and decide on resume across app restarts (not implemented: a failed or killed download restarts from zero)
-- [ ] Wi-Fi check adapter for `NetworkGate` (needs `npx expo install expo-network`; read the SDK 57 docs first)
+- [x] Wi-Fi check adapter for `NetworkGate`: `core/models/networkGate.ts` (expo-network; Wi-Fi or Ethernet and connected, any error = not on Wi-Fi) + `networkGate.test.ts`
+- [x] App services: `core/app/services.ts` (lazy singletons: persisted `SettingsStore`, `ModelManager`, `ModelDownloader` with the real file/transfer/network adapters) + `hooks/use-settings.ts` (`useSyncExternalStore`)
 - [x] `whisperService.ts` (load > transcribe `language="tl"` > release). Written against whisper.rn types; whisper.rn has NO confidence score, so `sttConfidence.ts` estimates it from the text. Needs on-device test + a model file
 - [x] TTS service (`tts/speak.ts`, expo-speech, en-US, timeout guard). Detector pause is handled by the orchestrator. Optional fil-PH voice not done
 - [x] Orchestrator state machine (`src/core/pipeline/`), tested against fake ports; real adapters still to be wired
-- [ ] Minimal Home screen showing state + last heard text
+- [~] Minimal Home screen showing state + last heard text (UI done; `OrchestratorProvider` is a plain React state holder, NOT connected to the real orchestrator/`StatusStore` yet, so it never changes from idle)
+- [ ] Assemble the real pipeline: build `PipelinePorts` from the adapters (mic source, detector, Whisper, LlmParser, TTS, `createExpoContactSource()`, `NativeDialer`, `nativeSmsSender`, `ExpoLocationCache`, `audioFocus`, `triggerLogger`), start it from Home, feed `StatusStore` into the Provider, mute button stops the mic
 - [ ] Manual test on device: "Yah anong oras na ba" speaks the time in English
 
 ## M2 — Other no-LLM intents
@@ -76,41 +79,41 @@ Device pieces:
 - [x] Dedicated call rule in `rules.ts` ("tawagan si kuya ben", "call ben" > call_contact + target, no Qwen) + tests in `rules.test.ts`. Not run yet
 - [x] Wire call flow into the orchestrator: optional `contacts` (`ContactSource`) + `dialer` (`Dialer`) ports in `pipeline/states.ts`; `confirm` = speak prompt > record (`includePreRoll: false`) > STT > `parseYesNo`; a too-short or low-confidence answer counts as `unknown` (never confirms); speak `reply`, then dial; dialer failure speaks "Sorry, I couldn't place the call"; without both ports call_contact is "not understood". 7 new tests in `orchestrator.test.ts`. NOT RUN yet: run `npm test`, `npx tsc --noEmit`, `npx expo lint`. Note: `minClipMs` 300 may drop a very short "oo"; that retries once then cancels (safe), tune on device
 - [x] `ContactSource` adapter: `system/contactSource.ts` (pure: raw rows > dialable contacts, prefers mobile/cell, drops contacts with no name or number, 10 min cache, denied/empty never cached, one shared read for overlapping calls) + `system/contacts.ts` (expo-contacts SDK 57 object API: `Contact.getAllDetails([FULL_NAME, PHONES])`, `getPermissionsAsync`, change listener invalidates the cache). `Contact` in `contactMatch.ts` now has an optional `phone`. Tests: `__tests__/contactSource.test.ts`. NOT RUN yet (no shell in that session): run `npm test`, `npx tsc --noEmit`, `npx expo lint`. On device: check `fullName` includes prefix/suffix ("Dr. ...") and does not hurt matching, and how long `getAllDetails` takes on a big address book
-- [ ] Wire `createExpoContactSource()` into the real `PipelinePorts.contacts` (when the pipeline is assembled) and call `requestContactsPermission()` from the Setup screen
-- [ ] `Dialer` adapter (CALL_PHONE native module): must read `contact.phone` and throw if it is missing; `Linking.openURL('tel:')` only opens the dialer, so it is not enough for hands-free
-- [ ] Direct call via CALL_PHONE (native module)
-- [ ] Emergency contacts in settings
-- [ ] Location: keep last GPS fix cached
-- [ ] SOS triggers: "tulong", "naaksidente ako", "SOS"
-- [ ] 5-second voice countdown with "cancel" listening
-- [ ] Silent SMS send with last location (native module) to all emergency contacts
-- [ ] Tests for SOS/call state machines (timers mocked)
+- [~] Wire `createExpoContactSource()` into the real `PipelinePorts.contacts` (waits for pipeline assembly, see M1) and call `requestContactsPermission()` from the Setup screen (done via `system/permissions.ts`)
+- [x] `Dialer` adapter (CALL_PHONE native module): must read `contact.phone` and throw if it is missing; `Linking.openURL('tel:')` only opens the dialer, so it is not enough for hands-free
+- [x] Direct call via CALL_PHONE (native module)
+- [x] Emergency contacts in settings (name + phone form in Settings, validated and persisted by the store; max 5)
+- [x] Location: keep last GPS fix cached (`ExpoLocationCache`; not started anywhere yet)
+- [x] SOS triggers: "tulong", "naaksidente ako", "SOS"
+- [x] 5-second voice countdown with "cancel" listening
+- [x] Silent SMS send with last location (native module) to all emergency contacts
+- [x] Tests for SOS/call state machines (timers mocked)
 
 ## M5 — Riding reliability
-- [ ] Foreground service + persistent notification
-- [ ] Notification action: stop mic completely
+- [~] Foreground service + persistent notification (Kotlin `TropaForegroundService` + manifest plugin written; nothing calls `startForegroundService()` from JS yet; not built)
+- [ ] Notification action: stop mic completely (currently only tapping the notification opens the app; a real action needs a BroadcastReceiver/PendingIntent in the service)
 - [ ] Mic works with screen off (verify on device)
-- [ ] Audio ducking while listening/speaking
-- [ ] Ignore clips < 0.5 s or low speech probability
-- [ ] Low Whisper confidence -> "Please say that again"
-- [ ] Unknown / parse failure -> "Sorry, I didn't understand"
-- [ ] Foreground service works on API 24-25 (no channels) and API 26+ (channels)
-- [ ] Legacy audio focus path for API < 26
-- [ ] Battery-optimization exemption prompt + OEM guide (Xiaomi/Oppo/Vivo/Samsung)
-- [ ] Trigger log (JSONL: wake accepted/rejected, transcript, intent, latency) + on/off toggle
+- [x] Audio ducking while listening/speaking (orchestrator calls optional `audioFocus` port; native `AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK`; verify on device)
+- [~] Ignore clips < 0.5 s or low speech probability (`minClipMs` is 300, not 500; tune on device)
+- [x] Low Whisper confidence -> "Please say that again"
+- [x] Unknown / parse failure -> "Sorry, I didn't understand"
+- [~] Foreground service works on API 24-25 (no channels) and API 26+ (channels) (code path exists; verify on device)
+- [~] Legacy audio focus path for API < 26 (code path exists; verify on device)
+- [~] Battery-optimization exemption prompt (in Setup via `system/permissions.ts`, re-checked on return to app); OEM guide (Xiaomi/Oppo/Vivo/Samsung) still to write
+- [~] Trigger log (`system/triggerLogger.ts`, JSONL) + toggle in Settings; not yet connected to the orchestrator or the `logging` setting
 - [ ] Optional: sherpa-onnx keyword detector as alternative (selectable in settings)
 - [ ] Optional: Bluetooth headset media button / volume key trigger
 - [ ] Handle phone-call interruptions and audio focus loss
 - [ ] Static check: no network calls outside Setup
 
 ## M6 — Screens (dark theme, large touch targets)
-- [ ] Theme: force dark, big buttons (min ~72 dp)
-- [ ] Home: status text ("Naghihintay ng 'Yah'" / Listening / Thinking / Speaking), last heard, last action, big mute-mic button
-- [ ] Settings: wake word list editor, detector type + sensitivity, Whisper tiny/base, keep-model-loaded, emergency contacts, TTS voice, debug toggle, logging toggle
-- [~] Setup screen: download logic with progress, Wi-Fi gate and checksum verify is done in `core/models/download.ts` (see M1); still to do: the screen itself, resume across restarts, optional import from local files, "ready for airplane mode" state
-- [ ] First-launch gate (redirect to Setup until models present)
+- [~] Theme: force dark (Stack uses `DarkTheme`, black backgrounds), big buttons (mute is 100 dp; `app.json` `userInterfaceStyle` still "automatic")
+- [~] Home: status orb + label, last heard, last reply, big mute button, settings gear (waits for real pipeline status; "last action" not shown; labels use English instead of "Naghihintay ng 'Yah'" from `app/status.ts`)
+- [~] Settings: persisted through `SettingsStore` (wake word add/remove, Whisper tiny/base, LLM on/off, keep-model-loaded, emergency contacts, debug, logging, reset). Missing: detector type + sensitivity, TTS voice picker
+- [~] Setup screen: real downloads via `ModelDownloader` (progress, verify phase, cancel, Wi-Fi gate with "use mobile data?" prompt, error text), shows only the models the current settings need; real permission checks/requests (mic required; notifications on API 33+, contacts, location, battery exemption optional). Still to do: resume across restarts, optional import from local files, "ready for airplane mode" state, device capability warning
+- [x] First-launch gate: Home redirects to `/setup` while `ModelManager.readiness(settings)` is not ready
 - [ ] Debug: RAM, time per step, false triggers/hour, battery drain estimate
-- [ ] Replace native tabs with a layout suited to this app
+- [x] Replace native tabs with a layout suited to this app (Stack: Home, Setup, Settings modal)
 
 ## M7 — Docs and tests
 - [ ] `docs/TEST_SCRIPT.md`: 40 Tagalog/Taglish phrases with expected result (with/without wake word, "kuya" in normal conversation, noise cases); spoken replies are English

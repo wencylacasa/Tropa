@@ -52,8 +52,8 @@
           "imageWidth": 76
         }
       ],
-      "expo-build-properties",
-      "llama.rn"
+      "llama.rn",
+      "./withForegroundService.js"
     ],
     "experiments": {
       "typedRoutes": true,

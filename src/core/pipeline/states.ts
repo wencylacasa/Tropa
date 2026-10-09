@@ -89,6 +89,12 @@ export type PipelinePorts = {
   dialer?: Dialer;
   now: () => Date;
   getBatteryLevel: () => Promise<number | null>;
+  /** Optional: SOS flow requires these three ports. */
+  getEmergencyContacts?: () => readonly import('../settings/settings').EmergencyContact[];
+  getLocation?: () => { latitude: number; longitude: number } | null;
+  sendSms?: (phone: string, message: string) => Promise<void>;
+  /** Optional: Used to duck background audio while listening/speaking. */
+  audioFocus?: { request: () => boolean; abandon: () => void };
 };
 
 export type TriggerOutcome =

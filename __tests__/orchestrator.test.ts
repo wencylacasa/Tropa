@@ -26,12 +26,16 @@ function makePorts(opts: {
   /** Wires the call flow. `dial` defaults to a recording mock. */
   contacts?: Contact[];
   dial?: (contact: Contact) => Promise<void>;
+  /** Wires the SOS flow. */
+  emergencyContacts?: import('@/core/settings/settings').EmergencyContact[];
+  location?: { latitude: number; longitude: number } | null;
 }) {
   const clips = [...(opts.clips ?? [GOOD_CLIP])];
   const transcripts = [...(opts.transcripts ?? [])];
   const spoken: string[] = [];
   const events: string[] = [];
   const dialed: Contact[] = [];
+  const sentSms: { phone: string; message: string }[] = [];
 
   const ports: PipelinePorts = {
     detector: {
@@ -70,8 +74,17 @@ function makePorts(opts: {
       : undefined,
     now: () => opts.now ?? new Date(2026, 9, 9, 16, 45),
     getBatteryLevel: async () => (opts.battery === undefined ? 80 : opts.battery),
+    getEmergencyContacts: opts.emergencyContacts ? () => opts.emergencyContacts! : undefined,
+    getLocation: opts.location !== undefined ? () => opts.location! : undefined,
+    sendSms: opts.emergencyContacts 
+      ? async (phone, message) => { sentSms.push({ phone, message }); } 
+      : undefined,
+    audioFocus: {
+      request: jest.fn(() => true),
+      abandon: jest.fn(() => {}),
+    },
   };
-  return { ports, spoken, events, dialed };
+  return { ports, spoken, events, dialed, sentSms };
 }
 
 describe('Orchestrator', () => {
@@ -312,6 +325,53 @@ describe('Orchestrator', () => {
       const outcome = await new Orchestrator(ports).handleTrigger();
       expect(outcome).toMatchObject({ result: 'not_understood' });
       expect(spoken).toEqual(["Sorry, I didn't understand"]);
+    });
+  });
+
+  describe('sos_alert', () => {
+    it('confirms cancellation, if no cancellation sends SMS', async () => {
+      const { ports, spoken, sentSms } = makePorts({
+        clips: [GOOD_CLIP, GOOD_CLIP],
+        transcripts: [t('Yah tulong'), t('wala', 0.9)], // "wala" is not "cancel" or "no"
+        emergencyContacts: [{ name: 'Test', phone: '123' }],
+        location: { latitude: 1, longitude: 2 },
+      });
+      const outcome = await new Orchestrator(ports).handleTrigger();
+      expect(outcome).toMatchObject({ result: 'handled', intent: 'sos_alert', reply: 'SOS sent to your emergency contacts.' });
+      expect(spoken).toEqual(['SOS triggered. Say cancel to abort.', 'SOS sent to your emergency contacts.']);
+      expect(sentSms).toHaveLength(1);
+    });
+
+    it('cancels if the user says no/cancel', async () => {
+      const { ports, spoken, sentSms } = makePorts({
+        clips: [GOOD_CLIP, GOOD_CLIP],
+        transcripts: [t('Yah tulong'), t('cancel', 0.9)],
+        emergencyContacts: [{ name: 'Test', phone: '123' }],
+        location: { latitude: 1, longitude: 2 },
+      });
+      const outcome = await new Orchestrator(ports).handleTrigger();
+      expect(outcome).toMatchObject({ result: 'handled', intent: 'sos_alert', reply: 'Okay, SOS cancelled.' });
+      expect(spoken).toEqual(['SOS triggered. Say cancel to abort.', 'Okay, SOS cancelled.']);
+      expect(sentSms).toHaveLength(0);
+    });
+
+    it('bails out if no emergency contacts', async () => {
+      const { ports, spoken, sentSms } = makePorts({
+        transcripts: [t('Yah tulong')],
+        emergencyContacts: [],
+        location: null,
+      });
+      const outcome = await new Orchestrator(ports).handleTrigger();
+      expect(outcome).toMatchObject({ result: 'handled', intent: 'sos_alert', reply: 'You have no emergency contacts set up.' });
+      expect(spoken).toEqual(['You have no emergency contacts set up.']);
+      expect(sentSms).toHaveLength(0);
+    });
+
+    it('gracefully complains if SOS ports are not wired', async () => {
+      const { ports, spoken } = makePorts({ transcripts: [t('Yah tulong')] }); // no emergencyContacts provided
+      const outcome = await new Orchestrator(ports).handleTrigger();
+      expect(outcome).toMatchObject({ result: 'handled', intent: 'sos_alert', reply: 'You have no emergency contacts set up.' });
+      expect(spoken).toEqual(['You have no emergency contacts set up.']);
     });
   });
 

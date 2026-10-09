@@ -77,6 +77,10 @@ const RULES: Rule[] = [
     ],
   },
   {
+    intent: 'sos_alert',
+    patterns: [/\btulong\b/, /\bnaaksidente (ako|kami)\b/, /\bsos\b/, /\bemergency\b/],
+  },
+  {
     intent: 'repeat_last',
     patterns: [/\bulitin\b/, /\bulit\b/, /\brepeat\b/, /\bsay that again\b/],
   },
