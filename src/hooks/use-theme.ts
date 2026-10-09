@@ -1,14 +1,9 @@
-/**
- * Learn more about light and dark modes:
- * https://docs.expo.dev/guides/color-schemes/
- */
-
 import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
 
+/**
+ * Tropa is always dark: it is used on a motorcycle, often in bright sun and at
+ * night, and a light theme would only add glare. The system setting is ignored.
+ */
 export function useTheme() {
-  const scheme = useColorScheme();
-  const theme = scheme === 'unspecified' ? 'light' : scheme;
-
-  return Colors[theme];
+  return Colors.dark;
 }
