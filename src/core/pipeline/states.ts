@@ -12,10 +12,11 @@ export type PipelineState =
 
 /** Audio captured after a possible trigger (pre-roll + live speech). */
 export type Clip = {
-  /** Opaque to the orchestrator; the STT adapter knows how to read it. */
+  /** Opaque to the orchestrator; the STT adapter knows how to read it (Float32Array, 16 kHz mono). */
   data: unknown;
+  /** Length of the speech itself (first to last speech frame), not the padding around it. */
   durationMs: number;
-  /** 0-1 from the VAD. */
+  /** Fraction of that speech span the VAD flagged as speech, 0-1. */
   speechProbability: number;
 };
 
@@ -34,9 +35,17 @@ export interface WakeDetector {
   resume(): Promise<void>;
 }
 
+export type RecordOptions = {
+  /**
+   * Prepend the last few seconds of audio (default true). Turn off for the
+   * follow-up clip after "Yes?", where the pre-roll would contain our own voice.
+   */
+  includePreRoll?: boolean;
+};
+
 export interface ClipRecorder {
   /** Resolves when ~1 s of silence or the 6 s cap is reached. */
-  record(): Promise<Clip>;
+  record(options?: RecordOptions): Promise<Clip>;
 }
 
 export interface SpeechToText {

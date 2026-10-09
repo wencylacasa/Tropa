@@ -7,7 +7,7 @@ import type { Clip, PipelinePorts, PipelineState, TriggerOutcome } from './state
 
 export type OrchestratorConfig = {
   wakeWords: WakeWord[];
-  /** Clips shorter than this are ignored. */
+  /** Speech shorter than this is ignored (noise bursts, clicks). */
   minClipMs: number;
   /** Clips with lower VAD speech probability are ignored. */
   minSpeechProbability: number;
@@ -19,7 +19,7 @@ export type OrchestratorConfig = {
 
 export const DEFAULT_CONFIG: OrchestratorConfig = {
   wakeWords: DEFAULT_WAKE_WORDS,
-  minClipMs: 500,
+  minClipMs: 300,
   minSpeechProbability: 0.4,
   minConfidence: 0.5,
   llmEnabled: true,
@@ -86,7 +86,7 @@ export class Orchestrator {
     await ports.feedback.beep();
 
     this.setState('recording');
-    const clip = await ports.recorder.record();
+    const clip = await ports.recorder.record({ includePreRoll: true });
     if (this.isTooShort(clip)) return { result: 'discarded_short' };
 
     this.setState('stt');
@@ -104,7 +104,7 @@ export class Orchestrator {
       await this.speak(REPLY_EMPTY_COMMAND);
 
       this.setState('recording');
-      const second = await ports.recorder.record();
+      const second = await ports.recorder.record({ includePreRoll: false });
       if (this.isTooShort(second)) return { result: 'no_command' };
 
       this.setState('stt');
