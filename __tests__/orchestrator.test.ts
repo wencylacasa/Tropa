@@ -93,6 +93,9 @@ describe('Orchestrator', () => {
     const outcome = await new Orchestrator(ports).handleTrigger();
     expect(outcome).toMatchObject({ result: 'handled', intent: 'tell_date' });
     expect(spoken).toEqual(['Yes?', 'Today is Friday, October 9']);
+    // The follow-up clip must skip the pre-roll: it would contain our own "Yes?".
+    expect(ports.recorder.record).toHaveBeenNthCalledWith(1, { includePreRoll: true });
+    expect(ports.recorder.record).toHaveBeenNthCalledWith(2, { includePreRoll: false });
   });
 
   it('gives up quietly if nothing follows the bare wake word', async () => {

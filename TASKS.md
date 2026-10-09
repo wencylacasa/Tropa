@@ -16,7 +16,7 @@ Legend: [ ] todo, [x] done. Work top to bottom; each milestone ends with `npx ts
 - [x] Set `android.package` (e.g. `com.wenz.tropa`); keep name/slug/scheme as Tropa
 - [ ] Remove starter demo content (explore tab, animated icon, hint row, web badge)
 - [ ] Install deps with `npx expo install`
-- [x] Add Jest (`jest-expo`) + `npm test` script (installed; `@/` alias mapped; first run pending)
+- [x] Add Jest (`jest-expo`) + `npm test` script (installed; `@/` alias mapped; first full run passed)
 - [x] Add Android permissions in `app.json`: RECORD_AUDIO, READ_CONTACTS, CALL_PHONE, SEND_SMS, ACCESS_FINE_LOCATION, FOREGROUND_SERVICE, FOREGROUND_SERVICE_MICROPHONE, POST_NOTIFICATIONS
 - [ ] Add config plugin(s) for foreground service type `microphone`
 - [~] Create `src/core/` folder skeleton from PLAN.md (done so far: format, wake, intents/handlers; rest created as each module is built)
@@ -25,19 +25,19 @@ Legend: [ ] todo, [x] done. Work top to bottom; each milestone ends with `npx ts
 
 ## M1 — Vertical slice: "Yah anong oras na ba"
 Pure logic first (testable without a device):
-- [x] `timeToEnglish.ts` ("4:45 in the afternoon", noon/midnight, 12-hour spoken style) + tests (written, not yet run: needs Jest)
+- [x] `timeToEnglish.ts` ("4:45 in the afternoon", noon/midnight, 12-hour spoken style) + tests (passing)
 - [ ] (optional, later) `timeToTagalog.ts` + test 16:45 -> "Alas-kuwatro kuwarenta y singko ng hapon", 01:00 "ala-una", 12:00 "alas-dose"; behind a reply-language setting
 - [x] `wakeWords.ts` defaults (yah, kuya, tol, bai, hoy yah, tropa) + variants (ya, yah, tol, tols, bay, bai, kuya, kuys)
 - [x] `fuzzyMatch.ts` (Levenshtein + phonetic normalisation; 3-letter words rely on the variants list, <3 letters exact only)
-- [x] `verify.ts` (first 1-2 words, strip wake word, empty-command flag) + tests (written, not yet run)
-- [x] `rules.ts` tell_time rule + tests (written, not yet run); `intents/types.ts` has the 12-intent union
+- [x] `verify.ts` (first 1-2 words, strip wake word, empty-command flag) + tests (passing)
+- [x] `rules.ts` tell_time rule + tests (passing); `intents/types.ts` has the 12-intent union
 Device pieces:
-- [ ] Settings store (persisted)
-- [ ] Mic capture > ring buffer (4 s) > VAD
-- [ ] Detector interface + Vosk detector (grammar incl. "tropa", HIGH sensitivity)
-- [ ] VAD-only fallback detector (for testing without Vosk)
+- [x] Settings store (persisted): `core/settings/` (validated JSON in the document dir via expo-file-system, subscribe/update/reset) + tests. Not wired to the orchestrator or any screen yet
+- [~] Mic capture > ring buffer (4 s) > VAD (done: `hub.ts`, `preRollBuffer.ts`, `vad.ts`; still missing: a real `RawAudioSource` backed by a mic library)
+- [~] Detector interface + Vosk detector (grammar incl. "tropa", HIGH sensitivity) (done: `WakeDetector` interface in `pipeline/states.ts`; Vosk detector not started)
+- [x] VAD-only fallback detector (for testing without Vosk): `detector/energyFallback.ts` + tests
 - [ ] Soft beep asset + playback
-- [ ] Post-trigger recorder (1 s silence / 6 s max, includes pre-roll) > WAV/PCM
+- [x] Post-trigger recorder (1 s silence / 6 s max, includes pre-roll): `audio/recorder.ts` + tests; `includePreRoll: false` for the clip after "Yes?". Outputs a 16 kHz Float32 clip
 - [ ] Model manager stub (path lookup for Whisper tiny)
 - [x] `whisperService.ts` (load > transcribe `language="tl"` > release). Written against whisper.rn types; whisper.rn has NO confidence score, so `sttConfidence.ts` estimates it from the text. Needs on-device test + a model file
 - [x] TTS service (`tts/speak.ts`, expo-speech, en-US, timeout guard). Detector pause is handled by the orchestrator. Optional fil-PH voice not done
