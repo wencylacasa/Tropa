@@ -16,3 +16,8 @@ android {
     abortOnError false
   }
 }
+
+dependencies {
+  // NotificationCompat for the foreground service notification.
+  implementation "androidx.core:core:1.13.1"
+}

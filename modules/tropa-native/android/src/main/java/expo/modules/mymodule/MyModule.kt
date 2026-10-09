@@ -13,13 +13,70 @@ import android.media.AudioManager
 import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
+import android.Manifest
+import android.content.pm.PackageManager
+import android.media.ToneGenerator
+import android.util.Base64
 
 class MyModule : Module() {
   private var audioFocusChangeListener: AudioManager.OnAudioFocusChangeListener? = null
   private var audioFocusRequest: AudioFocusRequest? = null
+  private var mic: MicCapture? = null
+
+  private fun stopMic() {
+    mic?.stop()
+    mic = null
+  }
 
   override fun definition() = ModuleDefinition {
     Name("TropaNative")
+
+    Events("onAudioData", "onMicError", "onStopRequested")
+
+    OnCreate {
+      TropaForegroundService.onStopRequested = {
+        stopMic()
+        sendEvent("onStopRequested", mapOf<String, Any?>())
+      }
+    }
+
+    OnDestroy {
+      TropaForegroundService.onStopRequested = null
+      stopMic()
+    }
+
+    /** Starts 16 kHz mono capture; each chunk arrives as base64 PCM16 in "onAudioData". */
+    Function("startMic") { chunkSamples: Int ->
+      val context = appContext.reactContext ?: throw Exceptions.ReactContextLost()
+      if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+        throw IllegalStateException("RECORD_AUDIO permission is not granted")
+      }
+      if (mic?.isRunning == true) return@Function
+      val capture = MicCapture(
+        chunkSamples,
+        onChunk = { bytes, length ->
+          sendEvent("onAudioData", mapOf("data" to Base64.encodeToString(bytes, 0, length, Base64.NO_WRAP)))
+        },
+        onError = { message -> sendEvent("onMicError", mapOf("message" to message)) },
+      )
+      capture.start()
+      mic = capture
+    }
+
+    Function("stopMic") {
+      stopMic()
+    }
+
+    /** Short soft beep after a possible trigger. Resolves when it has finished. */
+    AsyncFunction("beep") { durationMs: Int ->
+      val tone = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 60)
+      try {
+        tone.startTone(ToneGenerator.TONE_PROP_BEEP, durationMs)
+        Thread.sleep(durationMs.toLong() + 30)
+      } finally {
+        tone.release()
+      }
+    }
 
     Function("dialNumber") { phoneNumber: String ->
       val context = appContext.reactContext ?: throw Exceptions.ReactContextLost()
@@ -31,8 +88,20 @@ class MyModule : Module() {
     }
 
     Function("sendSilentSms") { phoneNumber: String, message: String ->
-      val smsManager = SmsManager.getDefault()
-      smsManager.sendTextMessage(phoneNumber, null, message, null, null)
+      val context = appContext.reactContext ?: throw Exceptions.ReactContextLost()
+      val smsManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        context.getSystemService(SmsManager::class.java)
+      } else {
+        @Suppress("DEPRECATION")
+        SmsManager.getDefault()
+      }
+      // Split so a long SOS text (location link) is not silently dropped.
+      val parts = smsManager.divideMessage(message)
+      if (parts.size > 1) {
+        smsManager.sendMultipartTextMessage(phoneNumber, null, parts, null, null)
+      } else {
+        smsManager.sendTextMessage(phoneNumber, null, message, null, null)
+      }
     }
 
     Function("startForegroundService") {
@@ -83,9 +152,9 @@ class MyModule : Module() {
     }
 
     Function("abandonAudioFocus") {
-      val context = appContext.reactContext ?: return@Function
+      val context = appContext.reactContext ?: return@Function null
       val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-      
+
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
         audioFocusRequest?.let { audioManager.abandonAudioFocusRequest(it) }
         audioFocusRequest = null

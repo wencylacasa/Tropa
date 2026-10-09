@@ -12,6 +12,8 @@ export type AssistantStatus = {
   /** The last thing we said for a handled command. */
   lastReply: string | null;
   lastTimingMs: number | null;
+  /** Why the assistant could not start or stopped unexpectedly. */
+  error: string | null;
 };
 
 export type StatusTone = 'off' | 'waiting' | 'busy';
@@ -24,6 +26,7 @@ export const INITIAL_STATUS: AssistantStatus = {
   lastAction: null,
   lastReply: null,
   lastTimingMs: null,
+  error: null,
 };
 
 /** One line for the Home screen. Returns null for outcomes that should not overwrite it. */
@@ -102,6 +105,10 @@ export class StatusStore {
 
   setMuted(muted: boolean): void {
     this.patch({ muted });
+  }
+
+  setError(error: string | null): void {
+    this.patch({ error });
   }
 
   setPipelineState(pipeline: PipelineState): void {

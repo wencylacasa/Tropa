@@ -12,32 +12,42 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { statusLabel } from '../core/app/status';
 import { useOrchestrator } from '../core/pipeline/Provider';
 import type { PipelineState } from '../core/pipeline/states';
 
-const STATE_CONFIG: Record<PipelineState, { color: string; label: string }> = {
-  idle: { color: '#208AEF', label: "Listening for 'Yah'" },
-  triggered: { color: '#fff', label: 'Triggered' },
-  recording: { color: '#4CAF50', label: 'Listening...' },
-  stt: { color: '#FF9800', label: 'Thinking...' },
-  verify: { color: '#FF9800', label: 'Processing...' },
-  intent: { color: '#FF9800', label: 'Understanding...' },
-  act: { color: '#208AEF', label: 'Acting...' },
-  speak: { color: '#4FC3F7', label: 'Speaking' },
+const STATE_COLOR: Record<PipelineState, string> = {
+  idle: '#208AEF',
+  triggered: '#fff',
+  recording: '#4CAF50',
+  stt: '#FF9800',
+  verify: '#FF9800',
+  intent: '#FF9800',
+  act: '#208AEF',
+  speak: '#4FC3F7',
 };
 
 export default function HomeScreen() {
   const router = useRouter();
-  const { status, toggleMute } = useOrchestrator();
+  const { status, start, toggleMute } = useOrchestrator();
   const { settings } = useSettings();
+  const ready = getServices().models.readiness(settings).ready;
 
   const pulse = useSharedValue(1);
   const muteScale = useSharedValue(1);
 
-  const cfg = STATE_CONFIG[status.state] ?? STATE_CONFIG.idle;
+  // "Off" covers both muted and a mic that failed to start.
+  const off = status.muted || !status.listening;
+  const color = STATE_COLOR[status.pipeline];
+
+  // Start listening as soon as Setup is done. Starting here (app visible) also
+  // satisfies Android 14's rule for microphone foreground services.
+  useEffect(() => {
+    if (ready) void start();
+  }, [ready, start]);
 
   useEffect(() => {
-    if (status.isMuted) {
+    if (off) {
       pulse.set(1);
       return;
     }
@@ -49,7 +59,7 @@ export default function HomeScreen() {
       -1,
       true,
     ));
-  }, [status.isMuted, status.state, pulse]);
+  }, [off, status.pipeline, pulse]);
 
   const orbStyle = useAnimatedStyle(() => ({
     transform: [{ scale: pulse.value }],
@@ -64,11 +74,11 @@ export default function HomeScreen() {
       withTiming(0.9, { duration: 80 }),
       withTiming(1, { duration: 120 }),
     ));
-    toggleMute();
+    void toggleMute();
   };
 
   // First-launch gate: stay in Setup until the models this configuration needs are on disk.
-  if (!getServices().models.readiness(settings).ready) return <Redirect href="/setup" />;
+  if (!ready) return <Redirect href="/setup" />;
 
   return (
     <View style={styles.container}>
@@ -92,8 +102,8 @@ export default function HomeScreen() {
               styles.orbGlow,
               orbStyle,
               {
-                backgroundColor: status.isMuted ? '#333' : cfg.color + '18',
-                borderColor: status.isMuted ? '#555' : cfg.color + '40',
+                backgroundColor: off ? '#333' : color + '18',
+                borderColor: off ? '#555' : color + '40',
               },
             ]}
           />
@@ -102,21 +112,26 @@ export default function HomeScreen() {
               styles.orb,
               orbStyle,
               {
-                backgroundColor: status.isMuted ? '#222' : cfg.color + '30',
-                borderColor: status.isMuted ? '#444' : cfg.color,
-                shadowColor: status.isMuted ? '#333' : cfg.color,
+                backgroundColor: off ? '#222' : color + '30',
+                borderColor: off ? '#444' : color,
+                shadowColor: off ? '#333' : color,
               },
             ]}
           >
-            {status.isMuted ? (
+            {off ? (
               <Text style={styles.orbMuteIcon}>✕</Text>
             ) : (
-              <Text style={[styles.orbDot, { backgroundColor: cfg.color }]} />
+              <Text style={[styles.orbDot, { backgroundColor: color }]} />
             )}
           </Animated.View>
-          <Text style={[styles.stateLabel, { color: status.isMuted ? '#666' : cfg.color }]}>
-            {status.isMuted ? 'Muted' : cfg.label}
+          <Text style={[styles.stateLabel, { color: off ? '#666' : color }]}>
+            {statusLabel(status, settings.wakeWords[0]?.word)}
           </Text>
+          {status.error ? (
+            <Text style={styles.errorText} numberOfLines={3}>
+              {status.error}
+            </Text>
+          ) : null}
         </View>
 
         {/* Activity Log */}
@@ -125,6 +140,14 @@ export default function HomeScreen() {
             <Text style={styles.logLabel}>Last heard</Text>
             <Text style={styles.logValue} numberOfLines={2}>
               {status.lastHeard ?? '—'}
+            </Text>
+          </View>
+          <View style={styles.logDivider} />
+          <View style={styles.logRow}>
+            <Text style={styles.logLabel}>Last action</Text>
+            <Text style={styles.logValue} numberOfLines={1}>
+              {status.lastAction ?? '—'}
+              {status.lastTimingMs !== null ? `  (${(status.lastTimingMs / 1000).toFixed(1)} s)` : ''}
             </Text>
           </View>
           <View style={styles.logDivider} />
@@ -144,21 +167,21 @@ export default function HomeScreen() {
                 styles.muteButton,
                 muteStyle,
                 {
-                  backgroundColor: status.isMuted ? '#3a1111' : '#0d2f50',
-                  borderColor: status.isMuted ? '#d32f2f' : '#208AEF',
+                  backgroundColor: status.muted ? '#3a1111' : '#0d2f50',
+                  borderColor: status.muted ? '#d32f2f' : '#208AEF',
                 },
               ]}
             >
               <Text style={styles.muteIcon}>
-                {status.isMuted ? '🔇' : '🎤'}
+                {status.muted ? '🔇' : '🎤'}
               </Text>
               <Text
                 style={[
                   styles.muteLabel,
-                  { color: status.isMuted ? '#ef5350' : '#4FC3F7' },
+                  { color: status.muted ? '#ef5350' : '#4FC3F7' },
                 ]}
               >
-                {status.isMuted ? 'Unmute' : 'Mute'}
+                {status.muted ? 'Unmute' : 'Mute'}
               </Text>
             </Animated.View>
           </Pressable>
@@ -232,6 +255,13 @@ const styles = StyleSheet.create({
     fontSize: 40,
     color: '#d32f2f',
     fontWeight: '300',
+  },
+  errorText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: '#ef5350',
+    textAlign: 'center',
+    paddingHorizontal: 12,
   },
   stateLabel: {
     marginTop: 24,

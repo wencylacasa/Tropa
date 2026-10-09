@@ -1,59 +1,32 @@
-import React, { createContext, useContext, useState, useCallback, type ReactNode } from 'react';
-import type { PipelineState, TriggerOutcome } from './states';
+import { createContext, useContext, useMemo, useSyncExternalStore, type ReactNode } from 'react';
 
-export type OrchestratorStatus = {
-  state: PipelineState;
-  isMuted: boolean;
-  lastHeard: string | null;
-  lastReply: string | null;
-  lastOutcome: TriggerOutcome | null;
-};
+import { getAssistant } from '../app/assistant';
+import type { AssistantStatus } from '../app/status';
 
 type OrchestratorContextValue = {
-  status: OrchestratorStatus;
-  toggleMute: () => void;
-  setState: (state: PipelineState) => void;
-  setLastHeard: (text: string) => void;
-  setLastReply: (text: string) => void;
-  setLastOutcome: (outcome: TriggerOutcome) => void;
+  status: AssistantStatus;
+  /** Starts the mic + detector (no-op when muted or already running). */
+  start: () => Promise<void>;
+  toggleMute: () => Promise<void>;
 };
 
 const OrchestratorContext = createContext<OrchestratorContextValue | null>(null);
 
+/** Exposes the real assistant (see core/app/assistant.ts) to the screens. */
 export function OrchestratorProvider({ children }: { children: ReactNode }) {
-  const [status, setStatus] = useState<OrchestratorStatus>({
-    state: 'idle',
-    isMuted: false,
-    lastHeard: null,
-    lastReply: null,
-    lastOutcome: null,
-  });
+  const { runtime, status: store } = getAssistant();
+  const status = useSyncExternalStore(store.subscribe, store.get);
 
-  const toggleMute = useCallback(() => {
-    setStatus((prev) => ({ ...prev, isMuted: !prev.isMuted }));
-  }, []);
-
-  const setState = useCallback((state: PipelineState) => {
-    setStatus((prev) => ({ ...prev, state }));
-  }, []);
-
-  const setLastHeard = useCallback((text: string) => {
-    setStatus((prev) => ({ ...prev, lastHeard: text }));
-  }, []);
-
-  const setLastReply = useCallback((text: string) => {
-    setStatus((prev) => ({ ...prev, lastReply: text }));
-  }, []);
-
-  const setLastOutcome = useCallback((outcome: TriggerOutcome) => {
-    setStatus((prev) => ({ ...prev, lastOutcome: outcome }));
-  }, []);
-
-  return (
-    <OrchestratorContext.Provider value={{ status, toggleMute, setState, setLastHeard, setLastReply, setLastOutcome }}>
-      {children}
-    </OrchestratorContext.Provider>
+  const value = useMemo<OrchestratorContextValue>(
+    () => ({
+      status,
+      start: () => runtime.start(),
+      toggleMute: () => runtime.setMuted(!status.muted),
+    }),
+    [runtime, status],
   );
+
+  return <OrchestratorContext.Provider value={value}>{children}</OrchestratorContext.Provider>;
 }
 
 export function useOrchestrator(): OrchestratorContextValue {
