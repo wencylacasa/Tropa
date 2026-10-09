@@ -37,6 +37,7 @@ Docs: https://docs.expo.dev/eas/index.md
 ## This machine (Windows)
 
 - Android SDK: `%LOCALAPPDATA%\Android\Sdk` (NDK 27.1.12297006 installed), JDK 17. `ANDROID_HOME` is not set globally; pass it when running Gradle.
+- Before any EAS build, check the JS bundle (Jest runs on Node and misses missing RN polyfills such as `buffer` for whisper.rn): `npx expo export --platform android --output-dir .expo/export-check`.
 - Compile-check the local native module: `npx expo prebuild --platform android --no-install`, then in `android/`: `gradlew.bat :tropa-native:compileDebugKotlin`.
 - Full local `assembleDebug` currently fails at the C++ link step for every native lib (undefined libc++ symbols), most likely because of the spaces in `C:\Users\Regine and Wency\`. Use EAS Build, or move the SDK + project to paths without spaces.
 - The IDE organizes imports on save and strips imports that are unused at that moment: add the code that uses a new import before (or together with) the import.
