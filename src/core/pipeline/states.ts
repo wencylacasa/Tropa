@@ -1,4 +1,5 @@
 import type { ParsedCommand } from '../intents/types';
+import type { Contact } from '../system/contactMatch';
 
 export type PipelineState =
   | 'idle'
@@ -65,6 +66,16 @@ export interface LlmParser {
   parse(command: string): Promise<ParsedCommand>;
 }
 
+/** Cached contacts that have a phone number. Empty when permission is missing. */
+export interface ContactSource {
+  getContacts(): Promise<readonly Contact[]>;
+}
+
+/** Places the call. Called only after an explicit spoken yes. */
+export interface Dialer {
+  dial(contact: Contact): Promise<void>;
+}
+
 export type PipelinePorts = {
   detector: WakeDetector;
   recorder: ClipRecorder;
@@ -73,6 +84,9 @@ export type PipelinePorts = {
   feedback: Feedback;
   /** Optional: absent when "fast mode" (rules only) or model not installed. */
   llm?: LlmParser;
+  /** Optional: without both `contacts` and `dialer`, call_contact is "not understood". */
+  contacts?: ContactSource;
+  dialer?: Dialer;
   now: () => Date;
   getBatteryLevel: () => Promise<number | null>;
 };

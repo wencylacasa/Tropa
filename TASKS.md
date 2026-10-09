@@ -54,24 +54,28 @@ Device pieces:
 - [x] battery_level handler + rules + `system/battery.ts` adapter (expo-battery)
 - [ ] Media control native bridge: play/pause/next
 - [ ] Volume up/down handler
-- [ ] Keyword rules: patugtog, tigil, sunod, hinaan, lakasan
+- [x] Keyword rules: patugtog, tigil, sunod, hinaan, lakasan (in `intents/rules.ts`; handlers still need the native media/volume bridge)
 - [x] repeat_last (stores last reply)
-- [ ] Rules unit tests
+- [x] Rules unit tests (media/volume cases added to `__tests__/rules.test.ts`)
 
 ## M3 — Qwen parser
 - [x] Obtain Qwen3 0.6B Q4_K_M GGUF: downloaded on the device in Setup (pinned URL + SHA-256 in `core/models/manager.ts`)
-- [ ] `grammar.ts` GBNF JSON grammar (intent enum, target string|null, reply string)
-- [ ] `prompt.ts` system prompt + 25+ few-shots (all 12 intents, Tagalog/Taglish input, English `reply` max 10 words)
-- [ ] `llmParser.ts` (n_ctx 1024, n_predict 64, temp 0, `/no_think`, load > parse > release)
-- [ ] Safe JSON parse + validation; failure -> unknown -> "Sorry, I didn't understand"
-- [ ] Never-guess guard for call_contact and sos_alert (require rule-level or high-confidence match)
-- [ ] Rules-first dispatcher: Qwen only if no rule matches
-- [ ] Tests with mocked LLM output
+- [x] `grammar.ts` GBNF JSON grammar (intent enum, target string|null, reply string) (built from `INTENTS`; still to verify on device that llama.rn accepts it)
+- [x] `prompt.ts` system prompt + 29 few-shots (all 12 intents, Tagalog/Taglish input, English `reply` max 10 words). WARNING: roughly 1,200+ tokens, more than n_ctx 1024; raise n_ctx to 2048 or trim shots once measured on device
+- [x] `llmParser.ts` (`LlmParser` class, `port()` returns the dispatcher's `LlmPort`): load > clearCache > completion (GBNF grammar, n_predict 64, temp 0, `enable_thinking: false`, `/no_think` in the prompt) > release unless `keepLoaded`. Default n_ctx is 2048 (not 1024) because the prompt is ~1,200+ tokens. Tests in `__tests__/llmParser.test.ts` with llama.rn mocked. NOT RUN yet. On device: confirm `grammar` is honoured together with `messages` + jinja (if the Qwen3 chat format overrides it, pass `jinja: false` or format the prompt with `getFormattedChat`), measure real prompt tokens and time per command
+- [x] Safe JSON parse + validation; failure -> unknown -> "Sorry, I didn't understand" (`intents/llmOutput.ts` `parseLlmOutput`)
+- [x] Never-guess guard for call_contact and sos_alert (`guardLlmCommand`: SOS needs an explicit SOS word, call needs the target heard in the transcript)
+- [x] Rules-first dispatcher: Qwen only if no rule matches (`intents/dispatcher.ts`, LLM injected as a port)
+- [x] Tests with mocked LLM output (`llmOutput.test.ts`, `dispatcher.test.ts`)
 
 ## M4 — Call and SOS
 - [ ] Contacts permission flow + contact cache
-- [ ] Fuzzy name match (handles "Kuya Ben", "Ben", "Ate ...") + tests
-- [x] Voice confirmation parser: yes/no in both languages, ambiguous = not confirmed (`yesNo.ts`); the spoken "Calling Kuya Ben, okay?" flow is still to do
+- [x] Fuzzy name match (handles "Kuya Ben", "Ben", "Ate ...") + tests (`system/contactMatch.ts`; ties return `ambiguous`, never guesses)
+- [x] Voice confirmation parser: yes/no in both languages, ambiguous = not confirmed (`yesNo.ts`)
+- [x] Call flow logic: `system/callFlow.ts` + `callFlow.test.ts` (match > "Calling Kuya Ben, okay?" > one retry on unclear > returns `{ reply, dial }`; dial is set only after an explicit yes; ties, no match, empty contacts and listen failures never dial). Pure logic, NOT yet run or wired
+- [x] Dedicated call rule in `rules.ts` ("tawagan si kuya ben", "call ben" > call_contact + target, no Qwen) + tests in `rules.test.ts`. Not run yet
+- [x] Wire call flow into the orchestrator: optional `contacts` (`ContactSource`) + `dialer` (`Dialer`) ports in `pipeline/states.ts`; `confirm` = speak prompt > record (`includePreRoll: false`) > STT > `parseYesNo`; a too-short or low-confidence answer counts as `unknown` (never confirms); speak `reply`, then dial; dialer failure speaks "Sorry, I couldn't place the call"; without both ports call_contact is "not understood". 7 new tests in `orchestrator.test.ts`. NOT RUN yet: run `npm test`, `npx tsc --noEmit`, `npx expo lint`. Note: `minClipMs` 300 may drop a very short "oo"; that retries once then cancels (safe), tune on device
+- [ ] Real adapters for the new ports: `ContactSource` (expo-contacts, cached, only contacts with a phone number) and `Dialer` (CALL_PHONE native module)
 - [ ] Direct call via CALL_PHONE (native module)
 - [ ] Emergency contacts in settings
 - [ ] Location: keep last GPS fix cached

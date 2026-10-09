@@ -1,6 +1,13 @@
 import { Orchestrator, DEFAULT_CONFIG } from '@/core/pipeline/orchestrator';
 import type { Clip, PipelinePorts, Transcript } from '@/core/pipeline/states';
 import type { ParsedCommand } from '@/core/intents/types';
+import type { Contact } from '@/core/system/contactMatch';
+
+const CONTACTS: Contact[] = [
+  { id: '1', name: 'Kuya Ben' },
+  { id: '2', name: 'Jun Santos' },
+  { id: '3', name: 'Jun Cruz' },
+];
 
 const GOOD_CLIP: Clip = { data: null, durationMs: 1800, speechProbability: 0.9 };
 const SHORT_CLIP: Clip = { data: null, durationMs: 200, speechProbability: 0.9 };
@@ -16,11 +23,15 @@ function makePorts(opts: {
   llm?: (command: string) => Promise<ParsedCommand>;
   battery?: number | null;
   now?: Date;
+  /** Wires the call flow. `dial` defaults to a recording mock. */
+  contacts?: Contact[];
+  dial?: (contact: Contact) => Promise<void>;
 }) {
   const clips = [...(opts.clips ?? [GOOD_CLIP])];
   const transcripts = [...(opts.transcripts ?? [])];
   const spoken: string[] = [];
   const events: string[] = [];
+  const dialed: Contact[] = [];
 
   const ports: PipelinePorts = {
     detector: {
@@ -48,10 +59,19 @@ function makePorts(opts: {
     },
     feedback: { beep: jest.fn(async () => {}) },
     llm: opts.llm ? { parse: jest.fn(opts.llm) } : undefined,
+    contacts: opts.contacts ? { getContacts: async () => opts.contacts as Contact[] } : undefined,
+    dialer: opts.contacts
+      ? {
+          dial: jest.fn(async (contact: Contact) => {
+            if (opts.dial) await opts.dial(contact);
+            dialed.push(contact);
+          }),
+        }
+      : undefined,
     now: () => opts.now ?? new Date(2026, 9, 9, 16, 45),
     getBatteryLevel: async () => (opts.battery === undefined ? 80 : opts.battery),
   };
-  return { ports, spoken, events };
+  return { ports, spoken, events, dialed };
 }
 
 describe('Orchestrator', () => {
@@ -209,6 +229,90 @@ describe('Orchestrator', () => {
     expect(outcome).toMatchObject({ result: 'error' });
     expect(events).toEqual(['pause', 'resume']);
     expect(o.getState()).toBe('idle');
+  });
+
+  describe('call_contact', () => {
+    it('confirms by voice, speaks, then dials after a yes', async () => {
+      const { ports, spoken, dialed } = makePorts({
+        clips: [GOOD_CLIP, GOOD_CLIP],
+        transcripts: [t('Yah tawagan si kuya ben'), t('oo')],
+        contacts: CONTACTS,
+      });
+      const outcome = await new Orchestrator(ports).handleTrigger();
+
+      expect(outcome).toMatchObject({ result: 'handled', intent: 'call_contact', reply: 'Okay, calling' });
+      expect(spoken).toEqual(['Calling Kuya Ben, okay?', 'Okay, calling']);
+      expect(dialed).toEqual([CONTACTS[0]]);
+      // The answer clip must skip the pre-roll: it would contain our own prompt.
+      expect(ports.recorder.record).toHaveBeenNthCalledWith(2, { includePreRoll: false });
+    });
+
+    it('does not dial on no', async () => {
+      const { ports, spoken, dialed } = makePorts({
+        clips: [GOOD_CLIP, GOOD_CLIP],
+        transcripts: [t('Yah tawagan si kuya ben'), t('hindi')],
+        contacts: CONTACTS,
+      });
+      await new Orchestrator(ports).handleTrigger();
+      expect(spoken).toEqual(['Calling Kuya Ben, okay?', 'Okay, cancelled']);
+      expect(dialed).toEqual([]);
+    });
+
+    it('treats a too-short answer as not confirmed and never dials', async () => {
+      const { ports, spoken, dialed } = makePorts({
+        clips: [GOOD_CLIP, SHORT_CLIP, SHORT_CLIP],
+        transcripts: [t('Yah tawagan si kuya ben')],
+        contacts: CONTACTS,
+      });
+      await new Orchestrator(ports).handleTrigger();
+      expect(spoken).toEqual(['Calling Kuya Ben, okay?', 'Please say yes or no', 'Okay, cancelled']);
+      expect(dialed).toEqual([]);
+    });
+
+    it('treats a low-confidence "yes" as not confirmed and never dials', async () => {
+      const { ports, dialed } = makePorts({
+        clips: [GOOD_CLIP, GOOD_CLIP, GOOD_CLIP],
+        transcripts: [t('Yah tawagan si kuya ben'), t('oo', 0.2), t('oo', 0.2)],
+        contacts: CONTACTS,
+      });
+      await new Orchestrator(ports).handleTrigger();
+      expect(dialed).toEqual([]);
+    });
+
+    it('never guesses between tied contacts', async () => {
+      const { ports, spoken, dialed } = makePorts({
+        transcripts: [t('Yah tawagan si jun')],
+        contacts: CONTACTS,
+      });
+      await new Orchestrator(ports).handleTrigger();
+      expect(spoken).toEqual(['I found Jun Santos or Jun Cruz. Please say the full name']);
+      expect(dialed).toEqual([]);
+    });
+
+    it('says it could not place the call when the dialer fails', async () => {
+      const { ports, spoken } = makePorts({
+        clips: [GOOD_CLIP, GOOD_CLIP],
+        transcripts: [t('Yah tawagan si kuya ben'), t('sige')],
+        contacts: CONTACTS,
+        dial: async () => {
+          throw new Error('CALL_PHONE denied');
+        },
+      });
+      const outcome = await new Orchestrator(ports).handleTrigger();
+      expect(outcome).toMatchObject({ result: 'handled', intent: 'call_contact' });
+      expect(spoken).toEqual([
+        'Calling Kuya Ben, okay?',
+        'Okay, calling',
+        "Sorry, I couldn't place the call",
+      ]);
+    });
+
+    it('is "not understood" when contacts and dialer are not wired', async () => {
+      const { ports, spoken } = makePorts({ transcripts: [t('Yah tawagan si kuya ben')] });
+      const outcome = await new Orchestrator(ports).handleTrigger();
+      expect(outcome).toMatchObject({ result: 'not_understood' });
+      expect(spoken).toEqual(["Sorry, I didn't understand"]);
+    });
   });
 
   it('reports state changes and outcome timing through hooks', async () => {

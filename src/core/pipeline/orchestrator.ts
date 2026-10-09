@@ -1,6 +1,9 @@
 import { runHandler } from '../intents/handlers';
 import { matchRules } from '../intents/rules';
 import type { ParsedCommand } from '../intents/types';
+import { parseYesNo, type YesNo } from '../intents/yesNo';
+import { runCallFlow } from '../system/callFlow';
+import type { Contact } from '../system/contactMatch';
 import { verifyWakeWord } from '../wake/verify';
 import { DEFAULT_WAKE_WORDS, type WakeWord } from '../wake/wakeWords';
 import type { Clip, PipelinePorts, PipelineState, TriggerOutcome } from './states';
@@ -33,6 +36,7 @@ export type OrchestratorHooks = {
 export const REPLY_EMPTY_COMMAND = 'Yes?';
 export const REPLY_REPEAT = 'Please say that again';
 export const REPLY_NOT_UNDERSTOOD = "Sorry, I didn't understand";
+export const REPLY_CALL_FAILED = "Sorry, I couldn't place the call";
 
 /**
  * Runs one trigger end to end:
@@ -123,13 +127,19 @@ export class Orchestrator {
     const parsed = await this.parse(command);
 
     this.setState('act');
-    const reply = parsed
-      ? await runHandler(parsed, {
-          now: ports.now,
-          getBatteryLevel: ports.getBatteryLevel,
-          lastReply: this.lastReply,
-        })
-      : null;
+    let reply: string | null = null;
+    let dial: Contact | null = null;
+    if (parsed?.intent === 'call_contact') {
+      const call = await this.runCall(parsed.target);
+      reply = call?.reply ?? null;
+      dial = call?.dial ?? null;
+    } else if (parsed) {
+      reply = await runHandler(parsed, {
+        now: ports.now,
+        getBatteryLevel: ports.getBatteryLevel,
+        lastReply: this.lastReply,
+      });
+    }
 
     if (reply === null) {
       await this.speak(REPLY_NOT_UNDERSTOOD);
@@ -138,6 +148,16 @@ export class Orchestrator {
 
     await this.speak(reply);
     if (parsed?.intent !== 'repeat_last') this.lastReply = reply;
+
+    // Dial only after the reply has been spoken (the call UI would cut it off),
+    // and only when the call flow produced a contact after an explicit yes.
+    if (dial && ports.dialer) {
+      try {
+        await ports.dialer.dial(dial);
+      } catch {
+        await this.speak(REPLY_CALL_FAILED);
+      }
+    }
 
     return {
       result: 'handled',
@@ -160,6 +180,34 @@ export class Orchestrator {
     } catch {
       return null;
     }
+  }
+
+  /** Null when contacts/dialer are not wired, so the caller says "not understood". */
+  private async runCall(target: string | null) {
+    const { contacts, dialer } = this.ports;
+    if (!contacts || !dialer) return null;
+    return runCallFlow(target, {
+      getContacts: () => contacts.getContacts(),
+      confirm: (prompt) => this.listenYesNo(prompt),
+    });
+  }
+
+  /**
+   * Speak a prompt, record one short answer (no pre-roll: it would contain our
+   * own voice), and read it as yes/no. A clip that is too short, a low-confidence
+   * transcript or an unclear answer all return 'unknown', which never confirms.
+   */
+  private async listenYesNo(prompt: string): Promise<YesNo> {
+    await this.speak(prompt);
+
+    this.setState('recording');
+    const clip = await this.ports.recorder.record({ includePreRoll: false });
+    if (this.isTooShort(clip)) return 'unknown';
+
+    this.setState('stt');
+    const heard = await this.ports.stt.transcribe(clip);
+    if (heard.confidence < this.config.minConfidence) return 'unknown';
+    return parseYesNo(heard.text);
   }
 
   private isTooShort(clip: Clip): boolean {
