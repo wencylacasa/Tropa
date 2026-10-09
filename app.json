@@ -58,6 +58,13 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "0288c389-52c2-491b-b756-55f4481251b9"
+      }
+    },
+    "owner": "wency2000"
   }
 }
