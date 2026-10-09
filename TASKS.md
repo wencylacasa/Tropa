@@ -38,7 +38,10 @@ Device pieces:
 - [x] VAD-only fallback detector (for testing without Vosk): `detector/energyFallback.ts` + tests
 - [ ] Soft beep asset + playback
 - [x] Post-trigger recorder (1 s silence / 6 s max, includes pre-roll): `audio/recorder.ts` + tests; `includePreRoll: false` for the clip after "Yes?". Outputs a 16 kHz Float32 clip
-- [ ] Model manager stub (path lookup for Whisper tiny)
+- [x] Model manager: `core/models/manager.ts` (path lookup for Whisper tiny/base + Qwen; only an exact-size file counts as installed; flags English-only Whisper; `readiness()` for the first-launch gate) + tests. Files live in `<document dir>/models/`: `ggml-tiny.bin`, `ggml-base.bin`, `Qwen3-0.6B-Q4_K_M.gguf`. Sizes, SHA-256 and pinned Hugging Face URLs come from the HF API (ggerganov/whisper.cpp, unsloth/Qwen3-0.6B-GGUF). Still to confirm on device: whisper.rn accepting the plain path
+- [x] Model downloader (the on-device download): `core/models/download.ts` + `sha256.ts` + tests. Wi-Fi gate (mobile data only if allowed), downloads to `<file>.part`, checks exact size then streaming SHA-256, only then renames into place; cancel via AbortSignal. Native adapter `fileModelFiles.ts` (expo-file-system download task) is NOT unit-tested
+- [ ] Downloader on device: confirm the HF redirect to its CDN is followed, time the JS SHA-256 on an old phone (offer `skipChecksum` if too slow), and decide on resume across app restarts (not implemented: a failed or killed download restarts from zero)
+- [ ] Wi-Fi check adapter for `NetworkGate` (needs `npx expo install expo-network`; read the SDK 57 docs first)
 - [x] `whisperService.ts` (load > transcribe `language="tl"` > release). Written against whisper.rn types; whisper.rn has NO confidence score, so `sttConfidence.ts` estimates it from the text. Needs on-device test + a model file
 - [x] TTS service (`tts/speak.ts`, expo-speech, en-US, timeout guard). Detector pause is handled by the orchestrator. Optional fil-PH voice not done
 - [x] Orchestrator state machine (`src/core/pipeline/`), tested against fake ports; real adapters still to be wired
@@ -56,7 +59,7 @@ Device pieces:
 - [ ] Rules unit tests
 
 ## M3 — Qwen parser
-- [ ] Obtain Qwen3 0.6B Q4_K_M GGUF (for local import)
+- [x] Obtain Qwen3 0.6B Q4_K_M GGUF: downloaded on the device in Setup (pinned URL + SHA-256 in `core/models/manager.ts`)
 - [ ] `grammar.ts` GBNF JSON grammar (intent enum, target string|null, reply string)
 - [ ] `prompt.ts` system prompt + 25+ few-shots (all 12 intents, Tagalog/Taglish input, English `reply` max 10 words)
 - [ ] `llmParser.ts` (n_ctx 1024, n_predict 64, temp 0, `/no_think`, load > parse > release)
@@ -98,7 +101,7 @@ Device pieces:
 - [ ] Theme: force dark, big buttons (min ~72 dp)
 - [ ] Home: status text ("Naghihintay ng 'Yah'" / Listening / Thinking / Speaking), last heard, last action, big mute-mic button
 - [ ] Settings: wake word list editor, detector type + sensitivity, Whisper tiny/base, keep-model-loaded, emergency contacts, TTS voice, debug toggle, logging toggle
-- [ ] Setup: Wi-Fi download with progress + resume, import from local files, checksum verify, "ready for airplane mode" state
+- [~] Setup screen: download logic with progress, Wi-Fi gate and checksum verify is done in `core/models/download.ts` (see M1); still to do: the screen itself, resume across restarts, optional import from local files, "ready for airplane mode" state
 - [ ] First-launch gate (redirect to Setup until models present)
 - [ ] Debug: RAM, time per step, false triggers/hour, battery drain estimate
 - [ ] Replace native tabs with a layout suited to this app

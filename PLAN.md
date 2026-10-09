@@ -29,6 +29,7 @@ Target: Android 7.0+ (API 24), 4 GB RAM phones, zero network calls at runtime.
 - Other defaults from section 8 still assumed unless you say otherwise (Vosk, Jest, sideloaded APK).
 - **Detector (decided):** Vosk default, sherpa-onnx keyword spotting as alternative, VAD-only as test fallback. Porcupine removed (needs a key).
 - **Reply text is English everywhere** ("Yes?", "Please say that again", "Sorry, I didn't understand"). Any older Tagalog reply strings in this file or the spec are superseded.
+- **Models (decided):** downloaded on the phone itself during Setup, over Wi-Fi by default, from pinned Hugging Face URLs (whisper.cpp `ggml-tiny.bin` / `ggml-base.bin`, unsloth `Qwen3-0.6B-Q4_K_M.gguf`). Each file is checked for exact size and SHA-256 before it is used. Importing from local files is an optional extra, not required. The download code is the only network code in the app.
 
 ## 1. Architecture
 
