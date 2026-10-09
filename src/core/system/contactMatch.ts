@@ -6,7 +6,12 @@
 
 import { cleanText, isFuzzyMatch } from '../wake/fuzzyMatch';
 
-export type Contact = { id: string; name: string };
+/**
+ * `phone` is set on contacts that come from the real contact source (always
+ * present there: contacts without a number are dropped). Matching ignores it;
+ * it just rides along so the dialer knows what to call.
+ */
+export type Contact = { id: string; name: string; phone?: string };
 
 export type ContactMatch =
   | { status: 'match'; contact: Contact }
