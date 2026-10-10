@@ -1,10 +1,10 @@
 import {
-  INITIAL_STATUS,
-  StatusStore,
-  describeOutcome,
-  statusLabel,
-  statusTone,
-  type AssistantStatus,
+    INITIAL_STATUS,
+    StatusStore,
+    describeOutcome,
+    statusLabel,
+    statusTone,
+    type AssistantStatus,
 } from '@/core/app/status';
 import { MODEL_SPECS } from '@/core/models/manager';
 import { readinessNotice } from '@/core/models/readinessNotice';
@@ -20,22 +20,22 @@ describe('statusLabel', () => {
     expect(statusLabel(status(), 'tropa')).toBe('Naghihintay ng "Tropa"');
   });
 
-  it('shows Muted and Mic off before anything else', () => {
-    expect(statusLabel(status({ muted: true, pipeline: 'speak' }))).toBe('Muted');
-    expect(statusLabel(status({ listening: false }))).toBe('Mic off');
-    expect(statusLabel(status({ muted: true, listening: false }))).toBe('Muted');
+  it('shows muted and mic-off before anything else', () => {
+    expect(statusLabel(status({ muted: true, pipeline: 'speak' }))).toBe('Naka-mute');
+    expect(statusLabel(status({ listening: false }))).toBe('Patay ang mic');
+    expect(statusLabel(status({ muted: true, listening: false }))).toBe('Naka-mute');
   });
 
-  it('maps every pipeline state to Listening, Thinking or Speaking', () => {
+  it('maps every pipeline state to a Tagalog label', () => {
     const expected: Record<PipelineState, string> = {
       idle: 'Naghihintay ng "Yah"',
-      triggered: 'Listening',
-      recording: 'Listening',
-      stt: 'Thinking',
-      verify: 'Thinking',
-      intent: 'Thinking',
-      act: 'Thinking',
-      speak: 'Speaking',
+      triggered: 'Nakikinig…',
+      recording: 'Nakikinig…',
+      stt: 'Binabasa ang sinabi mo…',
+      verify: 'Nag-iisip…',
+      intent: 'Nag-iisip…',
+      act: 'Nag-iisip…',
+      speak: 'Nagsasalita…',
     };
     for (const [pipeline, label] of Object.entries(expected)) {
       expect(statusLabel(status({ pipeline: pipeline as PipelineState }))).toBe(label);

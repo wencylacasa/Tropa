@@ -3,6 +3,7 @@ import { DEFAULT_CONFIG, Orchestrator } from '../pipeline/orchestrator';
 import type { PipelinePorts, TriggerOutcome } from '../pipeline/states';
 import type { Settings } from '../settings/settings';
 import type { SettingsStore } from '../settings/store';
+import { logEvent } from './appLog';
 import type { StatusStore } from './status';
 
 /** `release` frees resident models (keepModelLoaded) when the pipeline stops. */
@@ -31,7 +32,15 @@ type Running = {
 
 /** Settings baked into the ports/orchestrator. Others (contacts, logging) are read live. */
 function pipelineFingerprint(s: Settings): string {
-  return JSON.stringify([s.wakeWords, s.detector, s.detectorSensitivity, s.whisperModel, s.keepModelLoaded, s.llmEnabled]);
+  return JSON.stringify([
+    s.wakeWords,
+    s.detector,
+    s.detectorSensitivity,
+    s.whisperModel,
+    s.keepModelLoaded,
+    s.llmEnabled,
+    s.replyLanguage,
+  ]);
 }
 
 function messageOf(error: unknown): string {
@@ -89,6 +98,24 @@ export class AssistantRuntime {
     return this.setMuted(true);
   }
 
+  /**
+   * Typed command path (web preview, tests): skips mic + STT and runs the
+   * intent > act > speak tail on the given text. Uses the running orchestrator
+   * when the mic is up, otherwise builds a throwaway one (its hub never starts,
+   * so the detector/recorder are inert).
+   */
+  submitText(text: string): Promise<void> {
+    return this.serial(async () => {
+      try {
+        const orchestrator =
+          this.running?.orchestrator ?? this.buildOrchestrator(this.deps.createHub()).orchestrator;
+        await orchestrator.handleText(text);
+      } catch (error) {
+        this.status.setError(messageOf(error));
+      }
+    });
+  }
+
   async dispose(): Promise<void> {
     this.unsubscribeSettings();
     await this.stop();
@@ -100,28 +127,42 @@ export class AssistantRuntime {
     return next;
   }
 
+  /** Ports + orchestrator for the current settings. The hub is not started here. */
+  private buildOrchestrator(hub: FrameHub): { ports: BuiltPorts; orchestrator: Orchestrator } {
+    const settings = this.settings.get();
+    const ports = this.deps.createPorts(hub, settings);
+    const orchestrator = new Orchestrator(
+      ports,
+      {
+        ...DEFAULT_CONFIG,
+        wakeWords: settings.wakeWords,
+        llmEnabled: settings.llmEnabled,
+        replyLanguage: settings.replyLanguage,
+      },
+      {
+        onStateChange: (state) => this.status.setPipelineState(state),
+        onOutcome: (outcome, ms) => this.onOutcome(outcome, ms),
+      },
+    );
+    return { ports, orchestrator };
+  }
+
   private async startNow(): Promise<void> {
     const settings = this.settings.get();
     this.status.setError(null);
+    logEvent('runtime', 'starting mic + detector');
 
     let hub: FrameHub | null = null;
     try {
       this.deps.foreground?.start();
       hub = this.deps.createHub();
-      const ports = this.deps.createPorts(hub, settings);
-      const orchestrator = new Orchestrator(
-        ports,
-        { ...DEFAULT_CONFIG, wakeWords: settings.wakeWords, llmEnabled: settings.llmEnabled },
-        {
-          onStateChange: (state) => this.status.setPipelineState(state),
-          onOutcome: (outcome, ms) => this.onOutcome(outcome, ms),
-        },
-      );
+      const { ports, orchestrator } = this.buildOrchestrator(hub);
 
       await hub.start();
       await ports.detector.start(() => this.trigger());
       this.running = { hub, ports, orchestrator, builtFrom: pipelineFingerprint(settings) };
       this.status.setListening(true);
+      logEvent('runtime', 'listening');
       void this.deps.location?.start();
     } catch (error) {
       try {
@@ -132,12 +173,14 @@ export class AssistantRuntime {
       this.deps.foreground?.stop();
       this.status.setListening(false);
       this.status.setError(messageOf(error));
+      logEvent('runtime', `start failed: ${messageOf(error)}`);
     }
   }
 
   private async stopNow(): Promise<void> {
     const running = this.running;
     if (!running) return;
+    logEvent('runtime', 'stopping mic + detector');
     this.running = null;
     this.status.setListening(false);
 

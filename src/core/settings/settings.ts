@@ -47,7 +47,7 @@ export function defaultSettings(): Settings {
     detector: 'vosk',
     detectorSensitivity: 'high',
     whisperModel: 'tiny',
-    keepModelLoaded: false,
+    keepModelLoaded: true,
     llmEnabled: true,
     replyLanguage: 'en',
     emergencyContacts: [],

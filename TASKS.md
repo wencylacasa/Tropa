@@ -27,7 +27,7 @@ Legend: [ ] todo, [x] done. Work top to bottom; each milestone ends with `npx ts
 ## M1 — Vertical slice: "Yah anong oras na ba"
 Pure logic first (testable without a device):
 - [x] `timeToEnglish.ts` ("4:45 in the afternoon", noon/midnight, 12-hour spoken style) + tests (passing)
-- [ ] (optional, later) `timeToTagalog.ts` + test 16:45 -> "Alas-kuwatro kuwarenta y singko ng hapon", 01:00 "ala-una", 12:00 "alas-dose"; behind a reply-language setting
+- [x] `timeToTagalog.ts` + `dateToTagalog.ts` + tests (Spanish-style minutes: 16:45 -> "Alas-kuwatro y kuwarenta y singko ng hapon"). `replyLanguage: 'tl'` is wired end-to-end: handlers, call/SOS flows, orchestrator system replies and TTS (`fil-PH`), with a Settings toggle
 - [x] `wakeWords.ts` defaults (yah, kuya, tol, bai, hoy yah, tropa) + variants (ya, yah, tol, tols, bay, bai, kuya, kuys)
 - [x] `fuzzyMatch.ts` (Levenshtein + phonetic normalisation; 3-letter words rely on the variants list, <3 letters exact only)
 - [x] `verify.ts` (first 1-2 words, strip wake word, empty-command flag) + tests (passing)
@@ -55,9 +55,9 @@ Device pieces:
 - [x] `dateToEnglish.ts` + tests ("Friday, October 9")
 - [x] tell_date handler + rules ("anong petsa", "anong araw ngayon")
 - [x] battery_level handler + rules + `system/battery.ts` adapter (expo-battery)
-- [ ] Media control native bridge: play/pause/next
-- [ ] Volume up/down handler
-- [x] Keyword rules: patugtog, tigil, sunod, hinaan, lakasan (in `intents/rules.ts`; handlers still need the native media/volume bridge)
+- [x] Media control native bridge: `mediaPlayPause`/`mediaNext` on TropaNative (dispatchMediaKeyEvent) + `system/mediaControl.ts` + handlers
+- [x] Volume up/down handler: `volumeUp`/`volumeDown` on TropaNative (adjustStreamVolume on STREAM_MUSIC, panel shown)
+- [x] Keyword rules: patugtog, tigil, sunod, hinaan, lakasan + wider Tagalog coverage (magpatugtog, ituloy, palitan ang kanta, pahinaan, palakasin, ibaba/itaas, saklolo, pakiulit, itawag/tawagin/pakitawag)
 - [x] repeat_last (stores last reply)
 - [x] Rules unit tests (media/volume cases added to `__tests__/rules.test.ts`)
 

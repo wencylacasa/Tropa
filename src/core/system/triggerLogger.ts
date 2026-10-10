@@ -1,7 +1,16 @@
 import { File, Paths } from 'expo-file-system';
 import type { TriggerOutcome } from '../pipeline/states';
 
-export const LOG_FILE = new File(Paths.document, 'trigger_logs.jsonl');
+// Null where expo-file-system has no backend (web); all methods no-op then.
+function createLogFile(): File | null {
+  try {
+    return new File(Paths.document, 'trigger_logs.jsonl');
+  } catch {
+    return null;
+  }
+}
+
+export const LOG_FILE = createLogFile();
 
 export type LogEntry = {
   timestamp: string;
@@ -17,12 +26,15 @@ export const triggerLogger = {
       ...outcome,
     };
     
+    const file = LOG_FILE;
+    if (!file) return;
+
     try {
       const line = JSON.stringify(entry) + '\n';
-      if (!LOG_FILE.exists) {
-        LOG_FILE.create({ intermediates: true });
+      if (!file.exists) {
+        file.create({ intermediates: true });
       }
-      LOG_FILE.write(line, { append: true });
+      file.write(line, { append: true });
     } catch {
       // Best effort; ignore logging failures.
     }
@@ -30,10 +42,13 @@ export const triggerLogger = {
 
   /** Reads the last N logs. Returns empty array if file missing. */
   async readLogs(linesCount = 50): Promise<LogEntry[]> {
+    const file = LOG_FILE;
+    if (!file) return [];
+
     try {
-      if (!LOG_FILE.exists) return [];
-      
-      const content = LOG_FILE.textSync();
+      if (!file.exists) return [];
+
+      const content = file.textSync();
       const lines = content.trim().split('\n').filter(Boolean);
       return lines.slice(-linesCount).map((l) => JSON.parse(l));
     } catch {
@@ -43,9 +58,12 @@ export const triggerLogger = {
 
   /** Clears the log file. */
   async clearLogs(): Promise<void> {
+    const file = LOG_FILE;
+    if (!file) return;
+
     try {
-      if (LOG_FILE.exists) {
-        LOG_FILE.delete();
+      if (file.exists) {
+        file.delete();
       }
     } catch {
       // Ignored

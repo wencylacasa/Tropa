@@ -11,32 +11,22 @@ import type { ParsedCommand } from './types';
 /** Runs the model on the transcript and returns its raw text output. */
 export type LlmPort = (transcript: string) => Promise<string>;
 
-export type ParseResult = {
-  command: ParsedCommand;
-  /** Model-suggested reply (LLM path only). Handlers own the real reply. */
-  llmReply: string | null;
-};
-
 const NONE: ParsedCommand = { intent: 'unknown', target: null, source: 'none' };
 
-export async function parseCommand(transcript: string, llm?: LlmPort): Promise<ParseResult> {
+export async function parseCommand(transcript: string, llm?: LlmPort): Promise<ParsedCommand> {
   const ruled = matchRules(transcript);
-  if (ruled) return { command: ruled, llmReply: null };
+  if (ruled) return ruled;
 
   if (!llm || transcript.trim().length === 0) {
-    return { command: NONE, llmReply: null };
+    return NONE;
   }
 
   let raw: string;
   try {
     raw = await llm(transcript);
   } catch {
-    return { command: { ...NONE, source: 'llm' }, llmReply: null };
+    return { ...NONE, source: 'llm' };
   }
 
-  const parsed = parseLlmOutput(raw);
-  const command = guardLlmCommand(parsed.command, transcript);
-  // If the guard downgraded the command, the model's reply no longer applies.
-  const llmReply = command.intent === parsed.command.intent ? parsed.reply : null;
-  return { command, llmReply };
+  return guardLlmCommand(parseLlmOutput(raw), transcript);
 }

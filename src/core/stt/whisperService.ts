@@ -1,4 +1,4 @@
-import { initWhisper, type WhisperContext } from 'whisper.rn';
+import { initWhisper, type WhisperContext } from './whisperNative';
 
 import type { Clip, SpeechToText, Transcript } from '../pipeline/states';
 import { estimateConfidence, NONE } from './sttConfidence';
@@ -39,7 +39,8 @@ export class WhisperService implements SpeechToText {
 
       const { promise } = context.transcribeData(buffer, {
         language: this.options.language ?? 'tl',
-        maxThreads: this.options.maxThreads,
+        // whisper.rn defaults to 2 threads on <=4 cores; tiny fits comfortably in 4.
+        maxThreads: this.options.maxThreads ?? 4,
         prompt: this.options.prompt,
         temperature: 0,
       });

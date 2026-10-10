@@ -9,6 +9,7 @@ export function useSettings() {
   const settings = useSyncExternalStore<Settings>(
     (onChange) => store.subscribe(onChange),
     () => store.get(),
+    () => store.get(),
   );
   return { settings, store };
 }

@@ -1,5 +1,5 @@
-import { EnergyFallbackDetector } from '@/core/detector/energyFallback';
 import type { FrameHub, FrameListener } from '@/core/audio/hub';
+import { EnergyFallbackDetector } from '@/core/detector/energyFallback';
 
 const FRAME_MS = 20;
 
@@ -84,11 +84,34 @@ describe('EnergyFallbackDetector', () => {
     expect(onTrigger).not.toHaveBeenCalled();
 
     await detector.resume();
+    emit(false, 30); // 600 ms quiet gap: re-arms the detector
     emit(true, 2); // 40 ms: the 60 ms from before must not count
     expect(onTrigger).not.toHaveBeenCalled();
 
     emit(true, 3);
     expect(onTrigger).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not retrigger on noise that was already running at resume', async () => {
+    const { hub, emit } = makeHub();
+    const onTrigger = jest.fn();
+    const detector = new EnergyFallbackDetector(hub, { minSpeechMs: 100, cooldownMs: 0 });
+    await detector.start(onTrigger);
+
+    emit(true, 5); // fires once
+    expect(onTrigger).toHaveBeenCalledTimes(1);
+
+    // Simulate the pipeline running: pause, then resume while the "noise"
+    // (music, engine, our own reply) is still going.
+    await detector.pause();
+    await detector.resume();
+    emit(true, 200); // continuous sound: must NOT fire again
+    expect(onTrigger).toHaveBeenCalledTimes(1);
+
+    // The noise stops; after a quiet gap the next phrase fires normally.
+    emit(false, 30);
+    emit(true, 5);
+    expect(onTrigger).toHaveBeenCalledTimes(2);
   });
 
   it('unsubscribes on stop and ignores a second start', async () => {

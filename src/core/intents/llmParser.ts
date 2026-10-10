@@ -1,8 +1,8 @@
-import { initLlama, type LlamaContext } from 'llama.rn';
+import { initLlama, type LlamaContext } from './llamaNative';
 
-import { INTENT_GRAMMAR } from './grammar';
 import type { LlmPort } from './dispatcher';
-import { buildMessages } from './prompt';
+import { INTENT_GRAMMAR } from './grammar';
+import { buildChatMessages, buildMessages } from './prompt';
 
 export type LlmParserOptions = {
   /** Absolute path of the Qwen GGUF file, or null if not installed yet. */
@@ -29,6 +29,22 @@ export type LlmParserOptions = {
  *
  * Use `port()` as the `LlmPort` for `parseCommand`.
  */
+const SPEECH_CAP = 320;
+
+/** Voice reply cap: cut at the last sentence end inside the limit, never mid-word. */
+function trimForSpeech(text: string): string {
+  const trimmed = text.trim();
+  if (trimmed.length <= SPEECH_CAP) return trimmed;
+  const cut = trimmed.slice(0, SPEECH_CAP);
+  const end = Math.max(
+    cut.lastIndexOf('.'),
+    cut.lastIndexOf('!'),
+    cut.lastIndexOf('?'),
+    cut.lastIndexOf('\n'),
+  );
+  return (end > 40 ? cut.slice(0, end + 1) : cut).trim();
+}
+
 export class LlmParser {
   private context: LlamaContext | null = null;
 
@@ -54,6 +70,29 @@ export class LlmParser {
         enable_thinking: false,
       });
       return result.text;
+    } finally {
+      if (!this.options.keepLoaded) await this.release();
+    }
+  }
+
+  /**
+   * Freeform short reply for commands no intent matched. No grammar — just a
+   * small system prompt, slightly warm decoding, one spoken line.
+   */
+  async chat(
+    transcript: string,
+    lastExchange?: { command: string; reply: string } | null,
+  ): Promise<string> {
+    const context = await this.load();
+    try {
+      await context.clearCache(false);
+      const result = await context.completion({
+        messages: buildChatMessages(transcript, lastExchange),
+        n_predict: 140,
+        temperature: 0.7,
+        enable_thinking: false,
+      });
+      return trimForSpeech(result.text);
     } finally {
       if (!this.options.keepLoaded) await this.release();
     }

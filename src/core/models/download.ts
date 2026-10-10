@@ -15,6 +15,12 @@ export interface ModelFileOps extends ModelFiles {
     chunkSize: number,
     onChunk: (chunk: Uint8Array) => Promise<void> | void,
   ): Promise<void>;
+  /**
+   * Native MD5 of the file (fast: computed in Kotlin/Swift, not on the JS
+   * thread). When present the downloader uses it instead of the slow
+   * JavaScript SHA-256 pass.
+   */
+  md5?(fileName: string): string | null;
 }
 
 /** The only place that touches the network (Setup). Rejects on failure or abort. */
@@ -111,23 +117,33 @@ export class ModelDownloader {
       }
 
       if (!options.skipChecksum) {
-        const hash = new Sha256();
-        let done = 0;
-        try {
-          await files.readChunks(part, VERIFY_CHUNK_BYTES, async (chunk) => {
-            if (signal?.aborted) throw new Error('aborted');
-            hash.update(chunk);
-            done += chunk.length;
-            report('verifying', done, spec.sizeBytes);
-            await yieldToEventLoop(); // keep the UI alive during the long hash
-          });
-        } catch (error) {
-          files.remove(part);
-          return signal?.aborted ? { result: 'cancelled' } : { result: 'error', message: messageOf(error) };
-        }
-        if (hash.digestHex() !== spec.sha256) {
-          files.remove(part);
-          return { result: 'bad_checksum' };
+        if (files.md5) {
+          // Native MD5 — a second or two even for the 400 MB LLM. Progress is
+          // reported in one shot; the phase is too fast to need increments.
+          report('verifying', spec.sizeBytes, spec.sizeBytes);
+          if (files.md5(part) !== spec.md5) {
+            files.remove(part);
+            return { result: 'bad_checksum' };
+          }
+        } else {
+          const hash = new Sha256();
+          let done = 0;
+          try {
+            await files.readChunks(part, VERIFY_CHUNK_BYTES, async (chunk) => {
+              if (signal?.aborted) throw new Error('aborted');
+              hash.update(chunk);
+              done += chunk.length;
+              report('verifying', done, spec.sizeBytes);
+              await yieldToEventLoop(); // keep the UI alive during the long hash
+            });
+          } catch (error) {
+            files.remove(part);
+            return signal?.aborted ? { result: 'cancelled' } : { result: 'error', message: messageOf(error) };
+          }
+          if (hash.digestHex() !== spec.sha256) {
+            files.remove(part);
+            return { result: 'bad_checksum' };
+          }
         }
       }
 

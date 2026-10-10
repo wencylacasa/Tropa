@@ -1,8 +1,8 @@
 import {
-  MAX_EMERGENCY_CONTACTS,
-  MAX_WAKE_WORDS,
-  defaultSettings,
-  sanitizeSettings,
+    MAX_EMERGENCY_CONTACTS,
+    MAX_WAKE_WORDS,
+    defaultSettings,
+    sanitizeSettings,
 } from '@/core/settings/settings';
 import { SettingsStore, type SettingsStorage } from '@/core/settings/store';
 import { DEFAULT_WAKE_WORDS } from '@/core/wake/wakeWords';
@@ -34,7 +34,7 @@ describe('sanitizeSettings', () => {
       whisperModel: 'tiny',
       replyLanguage: 'en',
       llmEnabled: true,
-      keepModelLoaded: false,
+      keepModelLoaded: true,
     });
     expect(d.wakeWords.map((w) => w.word)).toContain('tropa');
   });

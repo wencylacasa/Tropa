@@ -3,30 +3,29 @@ import type { ParsedCommand } from '@/core/intents/types';
 
 describe('parseLlmOutput', () => {
   it('parses a clean result', () => {
-    const r = parseLlmOutput('{"intent":"tell_time","target":null,"reply":"Checking the time"}');
-    expect(r.command).toEqual({ intent: 'tell_time', target: null, source: 'llm' });
-    expect(r.reply).toBe('Checking the time');
+    expect(parseLlmOutput('{"intent":"tell_time","target":null}')).toEqual({
+      intent: 'tell_time',
+      target: null,
+      source: 'llm',
+    });
+  });
+
+  it('ignores extra fields like a stray reply', () => {
+    expect(
+      parseLlmOutput('{"intent":"tell_time","target":null,"reply":"Checking the time"}'),
+    ).toEqual({ intent: 'tell_time', target: null, source: 'llm' });
   });
 
   it('extracts JSON wrapped in text or code fences', () => {
-    const r = parseLlmOutput('```json\n{"intent":"battery_level","target":null,"reply":"ok"}\n```');
-    expect(r.command.intent).toBe('battery_level');
+    const r = parseLlmOutput('```json\n{"intent":"battery_level","target":null}\n```');
+    expect(r.intent).toBe('battery_level');
   });
 
   it('keeps target only for call_contact', () => {
     expect(
-      parseLlmOutput('{"intent":"call_contact","target":" Kuya Ben ","reply":"Calling"}').command,
+      parseLlmOutput('{"intent":"call_contact","target":" Kuya Ben "}'),
     ).toEqual({ intent: 'call_contact', target: 'Kuya Ben', source: 'llm' });
-    expect(
-      parseLlmOutput('{"intent":"tell_time","target":"Ben","reply":"ok"}').command.target,
-    ).toBeNull();
-  });
-
-  it('drops replies longer than 10 words', () => {
-    const long = 'one two three four five six seven eight nine ten eleven';
-    const r = parseLlmOutput(`{"intent":"tell_date","target":null,"reply":"${long}"}`);
-    expect(r.command.intent).toBe('tell_date');
-    expect(r.reply).toBeNull();
+    expect(parseLlmOutput('{"intent":"tell_time","target":"Ben"}').target).toBeNull();
   });
 
   it.each([
@@ -34,11 +33,11 @@ describe('parseLlmOutput', () => {
     'not json',
     '{"intent":',
     '[]',
-    '{"intent":"fly_to_moon","target":null,"reply":"ok"}',
+    '{"intent":"fly_to_moon","target":null}',
     '{"intent":42}',
-    '{"intent":"call_contact","target":5,"reply":"ok"}',
+    '{"intent":"call_contact","target":5}',
   ])('falls back to unknown for %j', (raw) => {
-    expect(parseLlmOutput(raw).command).toEqual({ intent: 'unknown', target: null, source: 'llm' });
+    expect(parseLlmOutput(raw)).toEqual({ intent: 'unknown', target: null, source: 'llm' });
   });
 });
 

@@ -10,14 +10,12 @@ describe('prompt few-shots', () => {
     for (const intent of INTENTS) expect(covered.has(intent)).toBe(true);
   });
 
-  it('every example answer is valid and replies are max 10 words', () => {
+  it('every example answer is valid', () => {
     for (const shot of FEW_SHOTS) {
-      expect(shot.reply.split(/\s+/).length).toBeLessThanOrEqual(10);
-      const json = JSON.stringify({ intent: shot.intent, target: shot.target, reply: shot.reply });
+      const json = JSON.stringify({ intent: shot.intent, target: shot.target });
       const parsed = parseLlmOutput(json);
-      expect(parsed.command.intent).toBe(shot.intent);
-      expect(parsed.command.target).toBe(shot.target);
-      expect(parsed.reply).toBe(shot.reply);
+      expect(parsed.intent).toBe(shot.intent);
+      expect(parsed.target).toBe(shot.target);
     }
   });
 
@@ -30,9 +28,9 @@ describe('prompt few-shots', () => {
 });
 
 describe('INTENT_GRAMMAR', () => {
-  it('mentions every intent and the three fields', () => {
+  it('mentions every intent and both fields', () => {
     for (const intent of INTENTS) expect(INTENT_GRAMMAR).toContain(`\\"${intent}\\"`);
-    for (const field of ['intent', 'target', 'reply']) expect(INTENT_GRAMMAR).toContain(`\\"${field}\\"`);
+    for (const field of ['intent', 'target']) expect(INTENT_GRAMMAR).toContain(`\\"${field}\\"`);
     expect(INTENT_GRAMMAR.startsWith('root ::=')).toBe(true);
   });
 });
@@ -41,49 +39,45 @@ describe('parseCommand (rules first, LLM fallback)', () => {
   it('does not call the LLM when a rule matches', async () => {
     const llm = jest.fn();
     const r = await parseCommand('anong oras na ba', llm);
-    expect(r.command).toEqual({ intent: 'tell_time', target: null, source: 'rule' });
+    expect(r).toEqual({ intent: 'tell_time', target: null, source: 'rule' });
     expect(llm).not.toHaveBeenCalled();
   });
 
   it('uses the LLM when no rule matches', async () => {
-    const llm = jest
-      .fn()
-      .mockResolvedValue('{"intent":"call_contact","target":"Kuya Ben","reply":"Calling Kuya Ben"}');
+    const llm = jest.fn().mockResolvedValue('{"intent":"call_contact","target":"Kuya Ben"}');
     // "pakitawagan" does not start with a call verb, so no rule matches and the LLM runs.
     const r = await parseCommand('pakitawagan mo si kuya ben', llm);
-    expect(r.command).toEqual({ intent: 'call_contact', target: 'Kuya Ben', source: 'llm' });
-    expect(r.llmReply).toBe('Calling Kuya Ben');
+    expect(r).toEqual({ intent: 'call_contact', target: 'Kuya Ben', source: 'llm' });
   });
 
   it('resolves a plain call request by rule without calling the LLM', async () => {
     const llm = jest.fn();
     const r = await parseCommand('tawagan mo si kuya ben', llm);
-    expect(r.command).toEqual({ intent: 'call_contact', target: 'kuya ben', source: 'rule' });
+    expect(r).toEqual({ intent: 'call_contact', target: 'kuya ben', source: 'rule' });
     expect(llm).not.toHaveBeenCalled();
   });
 
-  it('downgrades an unsafe LLM sos_alert and drops its reply', async () => {
-    const llm = jest.fn().mockResolvedValue('{"intent":"sos_alert","target":null,"reply":"Sending SOS"}');
+  it('downgrades an unsafe LLM sos_alert', async () => {
+    const llm = jest.fn().mockResolvedValue('{"intent":"sos_alert","target":null}');
     const r = await parseCommand('kumain ka na ba', llm);
-    expect(r.command.intent).toBe('unknown');
-    expect(r.llmReply).toBeNull();
+    expect(r.intent).toBe('unknown');
   });
 
   it('returns unknown when the LLM throws or emits garbage', async () => {
     const boom = jest.fn().mockRejectedValue(new Error('oom'));
-    expect((await parseCommand('kumain ka na ba', boom)).command.intent).toBe('unknown');
+    expect((await parseCommand('kumain ka na ba', boom)).intent).toBe('unknown');
     const junk = jest.fn().mockResolvedValue('blah');
-    expect((await parseCommand('kumain ka na ba', junk)).command.intent).toBe('unknown');
+    expect((await parseCommand('kumain ka na ba', junk)).intent).toBe('unknown');
   });
 
   it('returns unknown without an LLM or with an empty transcript', async () => {
-    expect((await parseCommand('kumain ka na ba')).command).toEqual({
+    expect(await parseCommand('kumain ka na ba')).toEqual({
       intent: 'unknown',
       target: null,
       source: 'none',
     });
     const llm = jest.fn();
-    expect((await parseCommand('   ', llm)).command.source).toBe('none');
+    expect((await parseCommand('   ', llm)).source).toBe('none');
     expect(llm).not.toHaveBeenCalled();
   });
 });

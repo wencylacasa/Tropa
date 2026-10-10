@@ -33,6 +33,11 @@ export function createFileModelFiles(folderName = 'models'): ModelFileOps & Mode
       fileOf(fromName).rename(toName);
     },
 
+    md5(fileName) {
+      const file = fileOf(fileName);
+      return file.exists ? file.md5 : null;
+    },
+
     async readChunks(fileName, chunkSize, onChunk) {
       const handle = fileOf(fileName).open(FileMode.ReadOnly);
       try {

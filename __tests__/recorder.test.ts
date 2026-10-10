@@ -1,6 +1,6 @@
-import { VadClipRecorder } from '@/core/audio/recorder';
 import type { FrameHub, FrameListener } from '@/core/audio/hub';
 import type { PreRollSnapshot } from '@/core/audio/preRollBuffer';
+import { VadClipRecorder } from '@/core/audio/recorder';
 
 const FRAME_SAMPLES = 320; // 20 ms at 16 kHz
 const FRAME_MS = 20;
@@ -65,7 +65,9 @@ describe('VadClipRecorder', () => {
 
     const clip = await pending;
     expect(hub.getPreRoll).toHaveBeenCalledTimes(1);
-    expect((clip.data as Float32Array).length).toBe((10 + 50) * FRAME_SAMPLES);
+    // Data is trimmed to the speech span plus padding: 10 speech frames from
+    // the pre-roll, then at most 300 ms (15 frames) of trailing silence.
+    expect((clip.data as Float32Array).length).toBe((10 + 15) * FRAME_SAMPLES);
     expect(clip.durationMs).toBe(10 * FRAME_MS);
   });
 
@@ -79,8 +81,39 @@ describe('VadClipRecorder', () => {
 
     const clip = await pending;
     expect(hub.getPreRoll).not.toHaveBeenCalled();
-    expect((clip.data as Float32Array).length).toBe((25 + 50) * FRAME_SAMPLES);
+    // 25 speech frames + up to 15 frames (300 ms) of trailing padding.
+    expect((clip.data as Float32Array).length).toBe((25 + 15) * FRAME_SAMPLES);
     expect(clip.durationMs).toBe(25 * FRAME_MS);
+  });
+
+  it('trims silence before and after the speech span', async () => {
+    const { hub, emit } = makeHub(preRoll(30, false)); // 600 ms of quiet pre-roll
+    const pending = new VadClipRecorder(hub).record();
+
+    emit(true, 10); // 200 ms of speech
+    emit(false, 50); // 1 s of silence ends the recording
+
+    const clip = await pending;
+    // 300 ms padding + 200 ms speech + 300 ms padding = 40 frames.
+    expect((clip.data as Float32Array).length).toBe(40 * FRAME_SAMPLES);
+    expect(clip.durationMs).toBe(200);
+  });
+
+  it('resolves via the watchdog even when frames stop arriving', async () => {
+    jest.useFakeTimers();
+    try {
+      const { hub, emit, listenerCount } = makeHub();
+      const pending = new VadClipRecorder(hub, { maxMs: 2000 }).record({ includePreRoll: false });
+
+      emit(true, 5); // a little speech, then the mic "dies" (no more frames)
+      jest.advanceTimersByTime(5000); // past maxMs + watchdog slack
+
+      const clip = await pending;
+      expect(clip.durationMs).toBe(5 * FRAME_MS);
+      expect(listenerCount()).toBe(0);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('gives up with an empty clip when nobody speaks', async () => {

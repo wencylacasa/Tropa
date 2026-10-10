@@ -55,24 +55,25 @@ function capitalize(word: string): string {
   return word.length > 0 ? word[0].toUpperCase() + word.slice(1) : word;
 }
 
-/** Big status text. `wakeWord` is the first wake word from Settings. */
+/** Big status text, in Tagalog. `wakeWord` is the first wake word from Settings. */
 export function statusLabel(status: AssistantStatus, wakeWord = 'yah'): string {
-  if (status.muted) return 'Muted';
-  if (!status.listening) return 'Mic off';
+  if (status.muted) return 'Naka-mute';
+  if (!status.listening) return 'Patay ang mic';
 
   switch (status.pipeline) {
     case 'idle':
       return `Naghihintay ng "${capitalize(wakeWord)}"`;
     case 'triggered':
     case 'recording':
-      return 'Listening';
+      return 'Nakikinig…';
     case 'stt':
+      return 'Binabasa ang sinabi mo…';
     case 'verify':
     case 'intent':
     case 'act':
-      return 'Thinking';
+      return 'Nag-iisip…';
     case 'speak':
-      return 'Speaking';
+      return 'Nagsasalita…';
   }
 }
 
@@ -123,7 +124,7 @@ export class StatusStore {
       lastTimingMs: timingMs,
     };
     if ('transcript' in outcome) patch.lastHeard = outcome.transcript;
-    if (outcome.result === 'handled') patch.lastReply = outcome.reply;
+    if ('reply' in outcome && outcome.reply) patch.lastReply = outcome.reply;
     this.patch(patch);
   }
 

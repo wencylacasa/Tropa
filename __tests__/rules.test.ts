@@ -29,6 +29,30 @@ describe('matchRules', () => {
     ['lakasan mo', 'volume_up'],
     ['volume up', 'volume_up'],
     ['make it louder', 'volume_up'],
+    ['kamusta ka', 'greet'],
+    ['kumusta', 'greet'],
+    ['hello', 'greet'],
+    ['magandang umaga', 'greet'],
+    ['good evening', 'greet'],
+    ['salamat', 'thank'],
+    ['thank you', 'thank'],
+    ['sino ka', 'identity'],
+    ['who are you', 'identity'],
+    ['anong pangalan mo', 'identity'],
+    ["what's your name", 'identity'],
+    ['ano ang kaya mong gawin', 'help'],
+    ['ano pwede kong itanong', 'help'],
+    ['ano ang magagawa mo', 'help'],
+    ['what can you do', 'help'],
+    ['what can i ask', 'help'],
+    ['paano kita gamitin', 'help'],
+    ['nasaan ako', 'where_am_i'],
+    ['nasaan na tayo', 'where_am_i'],
+    ['saan ako', 'where_am_i'],
+    ['kung nasaan ako', 'where_am_i'],
+    ['where am i', 'where_am_i'],
+    ['anong lugar ito', 'where_am_i'],
+    ['current location ko', 'where_am_i'],
   ])('"%s" -> %s', (phrase, intent) => {
     expect(matchRules(phrase)).toEqual({ intent, target: null, source: 'rule' });
   });
@@ -43,7 +67,7 @@ describe('matchRules', () => {
     expect(matchRules(phrase)).toEqual({ intent: 'call_contact', target, source: 'rule' });
   });
 
-  it.each(['', '   ', 'call me back', 'tumawag', 'call', 'kumain ka na ba'])(
+  it.each(['', '   ', 'call me back', 'tumawag', 'call', 'kumain ka na ba', 'nasaan ang susi ko'])(
     '"%s" -> no rule match',
     (phrase) => {
       expect(matchRules(phrase)).toBeNull();

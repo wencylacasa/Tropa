@@ -20,6 +20,12 @@ declare class TropaNativeModule extends NativeModule<TropaNativeEvents> {
   startMic(chunkSamples: number): void;
   stopMic(): void;
   beep(durationMs: number): Promise<void>;
+  /** Headset-style media keys delivered to the active player. */
+  mediaPlayPause(): void;
+  mediaNext(): void;
+  /** One volume step on the music stream (system panel shown). */
+  volumeUp(): void;
+  volumeDown(): void;
 }
 
 /** null in Expo Go, on web and in Jest: the module only exists in a dev/release build. */

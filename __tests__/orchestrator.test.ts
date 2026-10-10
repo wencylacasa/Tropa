@@ -1,6 +1,6 @@
-import { Orchestrator, DEFAULT_CONFIG } from '@/core/pipeline/orchestrator';
-import type { Clip, PipelinePorts, Transcript } from '@/core/pipeline/states';
 import type { ParsedCommand } from '@/core/intents/types';
+import { DEFAULT_CONFIG, Orchestrator } from '@/core/pipeline/orchestrator';
+import type { Clip, PipelinePorts, Transcript } from '@/core/pipeline/states';
 import type { Contact } from '@/core/system/contactMatch';
 
 const CONTACTS: Contact[] = [
@@ -21,6 +21,7 @@ function makePorts(opts: {
   clips?: Clip[];
   transcripts?: Transcript[];
   llm?: (command: string) => Promise<ParsedCommand>;
+  chat?: (command: string) => Promise<string>;
   battery?: number | null;
   now?: Date;
   /** Wires the call flow. `dial` defaults to a recording mock. */
@@ -29,6 +30,7 @@ function makePorts(opts: {
   /** Wires the SOS flow. */
   emergencyContacts?: import('@/core/settings/settings').EmergencyContact[];
   location?: { latitude: number; longitude: number } | null;
+  place?: string | null;
 }) {
   const clips = [...(opts.clips ?? [GOOD_CLIP])];
   const transcripts = [...(opts.transcripts ?? [])];
@@ -62,7 +64,17 @@ function makePorts(opts: {
       }),
     },
     feedback: { beep: jest.fn(async () => {}) },
-    llm: opts.llm ? { parse: jest.fn(opts.llm) } : undefined,
+    llm:
+      opts.llm || opts.chat
+        ? {
+            parse: jest.fn(
+              opts.llm ??
+                (async () =>
+                  ({ intent: 'unknown', target: null, source: 'llm' }) as ParsedCommand),
+            ),
+            ...(opts.chat ? { chat: jest.fn(opts.chat) } : {}),
+          }
+        : undefined,
     contacts: opts.contacts ? { getContacts: async () => opts.contacts as Contact[] } : undefined,
     dialer: opts.contacts
       ? {
@@ -79,6 +91,7 @@ function makePorts(opts: {
     sendSms: opts.emergencyContacts 
       ? async (phone, message) => { sentSms.push({ phone, message }); } 
       : undefined,
+    describeLocation: opts.place !== undefined ? async () => opts.place ?? null : undefined,
     audioFocus: {
       request: jest.fn(() => true),
       abandon: jest.fn(() => {}),
@@ -188,6 +201,75 @@ describe('Orchestrator', () => {
       llm: async () => ({ intent: 'unknown', target: null, source: 'llm' }),
     });
     expect(await new Orchestrator(unknown.ports).handleTrigger()).toMatchObject({ result: 'not_understood' });
+  });
+
+  it('answers unmatched commands with a freeform chat reply', async () => {
+    const { ports, spoken } = makePorts({
+      transcripts: [t('Yah bakit ba ang init ngayon')],
+      chat: async () => 'Kasi tag-init na, tropa!',
+    });
+    const outcome = await new Orchestrator(ports).handleTrigger();
+    expect(outcome).toMatchObject({
+      result: 'handled',
+      intent: 'chat',
+      reply: 'Kasi tag-init na, tropa!',
+    });
+    expect(spoken).toEqual(['Kasi tag-init na, tropa!']);
+  });
+
+  it('still says not understood when chat fails or returns empty, or in fast mode', async () => {
+    const failing = makePorts({
+      transcripts: [t('Yah blah blah')],
+      chat: async () => {
+        throw new Error('nope');
+      },
+    });
+    expect(await new Orchestrator(failing.ports).handleTrigger()).toMatchObject({
+      result: 'not_understood',
+    });
+
+    const empty = makePorts({
+      transcripts: [t('Yah blah blah')],
+      chat: async () => '   ',
+    });
+    expect(await new Orchestrator(empty.ports).handleTrigger()).toMatchObject({
+      result: 'not_understood',
+    });
+
+    const fast = makePorts({
+      transcripts: [t('Yah blah blah')],
+      chat: async () => 'Hello!',
+    });
+    const o = new Orchestrator(fast.ports, { ...DEFAULT_CONFIG, llmEnabled: false });
+    expect(await o.handleTrigger()).toMatchObject({ result: 'not_understood' });
+    expect(fast.spoken).toEqual(["Sorry, I didn't understand"]);
+  });
+
+  it('tells the rider where they are, and degrades without a fix', async () => {
+    const ok = makePorts({ transcripts: [t('Yah nasaan ako')], place: 'EDSA, Makati' });
+    const a = await new Orchestrator(ok.ports).handleTrigger();
+    expect(a).toMatchObject({ result: 'handled', intent: 'where_am_i' });
+    expect(ok.spoken).toEqual(['You\'re at EDSA, Makati']);
+
+    const none = makePorts({ transcripts: [t('Yah nasaan ako')], place: null });
+    await new Orchestrator(none.ports).handleTrigger();
+    expect(none.spoken).toEqual(["I can't get your location"]);
+  });
+
+  it('handleText runs a typed command through verify and intent without the mic', async () => {
+    const { ports, spoken } = makePorts({});
+    const outcome = await new Orchestrator(ports).handleText('Yah, anong oras na?');
+    expect(outcome).toMatchObject({ result: 'handled', intent: 'tell_time' });
+    expect(spoken).toEqual(["It's 4:45 in the afternoon"]);
+    expect(ports.recorder.record).not.toHaveBeenCalled();
+    expect(ports.stt.transcribe).not.toHaveBeenCalled();
+  });
+
+  it('handleText still requires the wake word', async () => {
+    const { ports, spoken } = makePorts({});
+    const outcome = await new Orchestrator(ports).handleText('anong oras na');
+    expect(outcome).toMatchObject({ result: 'discarded_no_wake' });
+    expect(spoken).toEqual([]);
   });
 
   it('reports battery and handles an unreadable battery', async () => {

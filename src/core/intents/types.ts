@@ -10,6 +10,11 @@ export type Intent =
   | 'repeat_last'
   | 'call_contact'
   | 'sos_alert'
+  | 'where_am_i'
+  | 'greet'
+  | 'thank'
+  | 'identity'
+  | 'help'
   | 'unknown';
 
 export type ParsedCommand = {

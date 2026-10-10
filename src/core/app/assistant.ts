@@ -1,3 +1,5 @@
+
+
 import { AudioHub } from '../audio/hub';
 import { PreRollBuffer } from '../audio/preRollBuffer';
 import { VadClipRecorder } from '../audio/recorder';
@@ -11,7 +13,8 @@ import { audioFocus } from '../system/audioFocus';
 import { getBatteryLevel } from '../system/battery';
 import { createExpoContactSource } from '../system/contacts';
 import { NativeDialer } from '../system/dialer';
-import { ExpoLocationCache } from '../system/location';
+import { createLocationDescriber, ExpoLocationCache } from '../system/location';
+import { createMediaControl } from '../system/mediaControl';
 import { createNativeMicSource, foregroundService, nativeBeep, onNotificationStop } from '../system/nativeAudio';
 import { nativeSmsSender } from '../system/sms';
 import { triggerLogger } from '../system/triggerLogger';
@@ -46,7 +49,13 @@ export function getAssistant(): Assistant {
   const contacts = createExpoContactSource();
   const dialer = new NativeDialer();
   const location = new ExpoLocationCache();
-  const tts = new ExpoSpeaker({ language: 'en-US' });
+
+  // Detector sensitivity presets (only the VAD fallback exists so far).
+  const sensitivity: Record<Settings['detectorSensitivity'], { minSpeechMs: number; cooldownMs: number }> = {
+    low: { minSpeechMs: 400, cooldownMs: 3000 },
+    medium: { minSpeechMs: 250, cooldownMs: 2000 },
+    high: { minSpeechMs: 150, cooldownMs: 2000 },
+  };
 
   const runtime = new AssistantRuntime(settings, status, {
     createHub: () =>
@@ -66,17 +75,27 @@ export function getAssistant(): Assistant {
         prompt: whisperPrompt(current),
       });
 
+      // TTS voice follows the reply language; fil-PH falls back to the engine
+      // default when no Filipino voice is installed on the phone.
+      const tts = new ExpoSpeaker({ language: current.replyLanguage === 'tl' ? 'fil-PH' : 'en-US' });
+
       return {
         release: async () => {
           await Promise.allSettled([stt.release(), llmParser?.release()]);
         },
-        detector: new EnergyFallbackDetector(hub),
+        detector: new EnergyFallbackDetector(
+          hub,
+          sensitivity[current.detectorSensitivity] ?? sensitivity.high,
+        ),
         recorder: new VadClipRecorder(hub),
         stt,
         tts,
         feedback: nativeBeep,
         llm: llmParser
-          ? { parse: async (command) => (await parseCommand(command, llmParser.port())).command }
+          ? {
+              parse: (command) => parseCommand(command, llmParser.port()),
+              chat: (command, lastExchange) => llmParser.chat(command, lastExchange),
+            }
           : undefined,
         contacts,
         dialer,
@@ -85,7 +104,9 @@ export function getAssistant(): Assistant {
         getEmergencyContacts: () => settings.get().emergencyContacts,
         getLocation: () => location.getLastKnownLocation(),
         sendSms: (phone, message) => nativeSmsSender.sendSilentSms(phone, message),
+        describeLocation: createLocationDescriber(location),
         audioFocus,
+        media: createMediaControl(),
       };
     },
     foreground: foregroundService,

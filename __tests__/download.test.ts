@@ -1,8 +1,10 @@
 import { ModelDownloader, type InstallProgress, type ModelFileOps, type ModelTransfer } from '@/core/models/download';
 import { MODEL_SPECS, type ModelSpec } from '@/core/models/manager';
 import { sha256Hex } from '@/core/models/sha256';
+import { createHash } from 'crypto';
 
 const CONTENT = Uint8Array.from({ length: 3000 }, (_, i) => (i * 7 + 3) % 256);
+const md5Hex = (data: Uint8Array) => createHash('md5').update(data).digest('hex');
 const SPEC: ModelSpec = {
   id: 'whisper-tiny',
   label: 'Test model',
@@ -11,6 +13,7 @@ const SPEC: ModelSpec = {
   url: 'https://example.test/models/ggml-tiny.bin',
   sizeBytes: CONTENT.length,
   sha256: sha256Hex(CONTENT),
+  md5: md5Hex(CONTENT),
   wrongVariantFileNames: [],
 };
 const SPECS = { ...MODEL_SPECS, 'whisper-tiny': SPEC };
@@ -72,7 +75,7 @@ function setup(options: { initial?: Record<string, Uint8Array>; wifi?: boolean; 
   };
   const network = { isOnWifi: jest.fn(async () => options.wifi ?? true) };
   const downloader = new ModelDownloader(fs, transfer, network, SPECS);
-  return { downloader, store, ops, transfer, network };
+  return { downloader, store, ops, transfer, network, fs };
 }
 
 describe('ModelDownloader.install', () => {
@@ -138,6 +141,36 @@ describe('ModelDownloader.install', () => {
   it('rejects a download that produced no file', async () => {
     const { downloader, store } = setup({ behaviour: () => async () => {} });
     expect(await downloader.install('whisper-tiny')).toEqual({ result: 'bad_size', expected: 3000, actual: 0 });
+    expect(store.size).toBe(0);
+  });
+
+  it('uses the native md5 when the fs provides one', async () => {
+    const { fs, downloader, store } = setup();
+    fs.md5 = (name) => {
+      const data = store.get(name);
+      return data ? md5Hex(data) : null;
+    };
+    const progress: InstallProgress[] = [];
+    const result = await downloader.install('whisper-tiny', { onProgress: (p) => progress.push(p) });
+    expect(result).toEqual({ result: 'installed' });
+    // Native hash reports verification as a single complete event.
+    expect(progress.filter((p) => p.phase === 'verifying')).toEqual([
+      { id: 'whisper-tiny', phase: 'verifying', bytes: 3000, totalBytes: 3000 },
+    ]);
+  });
+
+  it('rejects wrong content via native md5 too', async () => {
+    const { fs, downloader, store, transfer } = setup();
+    fs.md5 = (name) => {
+      const data = store.get(name);
+      return data ? md5Hex(data) : null;
+    };
+    const corrupt = CONTENT.slice();
+    corrupt[7] ^= 0xff;
+    (transfer.download as jest.Mock).mockImplementation(
+      async (_u: string, name: string) => { store.set(name, corrupt); },
+    );
+    expect(await downloader.install('whisper-tiny')).toEqual({ result: 'bad_checksum' });
     expect(store.size).toBe(0);
   });
 

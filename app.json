@@ -41,7 +41,9 @@
         {
           "android": {
             "minSdkVersion": 24,
-            "buildArchs": ["arm64-v8a"]
+            "buildArchs": [
+              "arm64-v8a"
+            ]
           }
         }
       ],
@@ -66,6 +68,12 @@
         "projectId": "0288c389-52c2-491b-b756-55f4481251b9"
       }
     },
-    "owner": "wency2000"
+    "owner": "wency2000",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/0288c389-52c2-491b-b756-55f4481251b9"
+    }
   }
 }

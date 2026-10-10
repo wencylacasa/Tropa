@@ -118,6 +118,34 @@ export default function SettingsScreen() {
             </View>
           </View>
 
+          {/* Language */}
+          <Text style={styles.sectionTitle}>Language</Text>
+          <View style={styles.card}>
+            <Text style={styles.label}>Reply Language</Text>
+            <Text style={styles.hint}>Commands are understood in Tagalog, Taglish or English either way</Text>
+            <View style={styles.toggleRow}>
+              {(['en', 'tl'] as const).map((lang) => (
+                <Pressable
+                  key={lang}
+                  style={[
+                    styles.toggleBtn,
+                    settings.replyLanguage === lang && styles.toggleBtnActive,
+                  ]}
+                  onPress={() => update({ replyLanguage: lang })}
+                >
+                  <Text
+                    style={[
+                      styles.toggleBtnText,
+                      settings.replyLanguage === lang && styles.toggleBtnTextActive,
+                    ]}
+                  >
+                    {lang === 'en' ? 'English' : 'Tagalog'}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+
           {/* Model Settings */}
           <Text style={styles.sectionTitle}>Model Settings</Text>
           <View style={styles.card}>

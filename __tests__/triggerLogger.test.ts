@@ -1,4 +1,4 @@
-import { triggerLogger, LOG_FILE } from '../src/core/system/triggerLogger';
+import { LOG_FILE, triggerLogger } from '../src/core/system/triggerLogger';
 
 jest.mock('expo-file-system', () => {
   return {
@@ -39,7 +39,7 @@ describe('triggerLogger', () => {
   it('creates file if it does not exist', async () => {
     await triggerLogger.log({ result: 'handled', transcript: 'test', command: 'test', intent: 'test', reply: 'test' }, 100);
     
-    expect(LOG_FILE.create).toHaveBeenCalledWith({ intermediates: true });
+    expect(LOG_FILE!.create).toHaveBeenCalledWith({ intermediates: true });
     expect((LOG_FILE as any)._mockGetContent()).toContain('"result":"handled"');
   });
 
@@ -48,7 +48,7 @@ describe('triggerLogger', () => {
     (LOG_FILE as any)._mockSetContent('{"old":"log"}\n');
     await triggerLogger.log({ result: 'ignored_busy' }, 50);
     
-    expect(LOG_FILE.write).toHaveBeenCalled();
+    expect(LOG_FILE!.write).toHaveBeenCalled();
     expect((LOG_FILE as any)._mockGetContent()).toMatch(/\{"old":"log"\}\n\{.*"result":"ignored_busy".*\}/);
   });
 
@@ -65,6 +65,6 @@ describe('triggerLogger', () => {
   it('clears logs', async () => {
     (LOG_FILE as any)._mockSetExists(true);
     await triggerLogger.clearLogs();
-    expect(LOG_FILE.delete).toHaveBeenCalled();
+    expect(LOG_FILE!.delete).toHaveBeenCalled();
   });
 });

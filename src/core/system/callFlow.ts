@@ -9,6 +9,7 @@
  */
 
 import type { YesNo } from '../intents/yesNo';
+import type { ReplyLanguage } from '../settings/settings';
 import { matchContact, type Contact } from './contactMatch';
 
 export type CallFlowPorts = {
@@ -16,6 +17,8 @@ export type CallFlowPorts = {
   getContacts: () => Promise<readonly Contact[]>;
   /** Speaks the prompt, listens for one short answer, returns it as yes/no. */
   confirm: (prompt: string) => Promise<YesNo>;
+  /** Spoken language of prompts/replies; English when omitted. */
+  lang?: ReplyLanguage;
 };
 
 export type CallFlowResult = {
@@ -24,11 +27,34 @@ export type CallFlowResult = {
   dial: Contact | null;
 };
 
+// English strings are exported for tests; Tagalog lives in the table below.
 export const REPLY_NO_NAME = "Sorry, I didn't catch the name";
 export const REPLY_NO_CONTACTS = "I can't read your contacts";
 export const REPLY_CALL_CANCELLED = 'Okay, cancelled';
 export const REPLY_CALL_CONFIRMED = 'Okay, calling';
 export const PROMPT_YES_OR_NO = 'Please say yes or no';
+
+const TL = {
+  noName: 'Pasensya, hindi ko narinig ang pangalan',
+  noContacts: 'Hindi ko mabasa ang contacts mo',
+  cancelled: 'Sige, hindi na tatawag',
+  confirmed: 'Sige, tatawag na',
+  yesOrNo: 'Pakisabi ng oo o hindi',
+  notFound: (name: string) => `Wala akong nakitang ${name} sa contacts mo`,
+  ambiguous: (names: string) => `May nakita akong ${names}. Pakisabi ang buong pangalan`,
+  calling: (name: string) => `Tatawag kay ${name}, okay?`,
+};
+
+const EN = {
+  noName: REPLY_NO_NAME,
+  noContacts: REPLY_NO_CONTACTS,
+  cancelled: REPLY_CALL_CANCELLED,
+  confirmed: REPLY_CALL_CONFIRMED,
+  yesOrNo: PROMPT_YES_OR_NO,
+  notFound: (name: string) => `I can't find ${name} in your contacts`,
+  ambiguous: (names: string) => `I found ${names}. Please say the full name`,
+  calling: (name: string) => `Calling ${name}, okay?`,
+};
 
 const MAX_NAMES_SPOKEN = 3;
 
@@ -36,9 +62,10 @@ function declined(reply: string): CallFlowResult {
   return { reply, dial: null };
 }
 
-function joinNames(names: string[]): string {
+function joinNames(names: string[], tl: boolean): string {
   if (names.length <= 1) return names.join('');
-  return `${names.slice(0, -1).join(', ')} or ${names[names.length - 1]}`;
+  const conjunction = tl ? ' o ' : ' or ';
+  return `${names.slice(0, -1).join(', ')}${conjunction}${names[names.length - 1]}`;
 }
 
 /** A failed listen (mic, STT) counts as "not confirmed", never as yes. */
@@ -54,8 +81,11 @@ export async function runCallFlow(
   target: string | null,
   ports: CallFlowPorts,
 ): Promise<CallFlowResult> {
+  const tl = ports.lang === 'tl';
+  const s = tl ? TL : EN;
+
   const spoken = target?.trim() ?? '';
-  if (spoken.length === 0) return declined(REPLY_NO_NAME);
+  if (spoken.length === 0) return declined(s.noName);
 
   let contacts: readonly Contact[];
   try {
@@ -63,25 +93,25 @@ export async function runCallFlow(
   } catch {
     contacts = [];
   }
-  if (contacts.length === 0) return declined(REPLY_NO_CONTACTS);
+  if (contacts.length === 0) return declined(s.noContacts);
 
   const found = matchContact(spoken, contacts);
 
   if (found.status === 'none') {
-    return declined(`I can't find ${spoken} in your contacts`);
+    return declined(s.notFound(spoken));
   }
 
   if (found.status === 'ambiguous') {
     const names = found.contacts.slice(0, MAX_NAMES_SPOKEN).map((c) => c.name);
-    return declined(`I found ${joinNames(names)}. Please say the full name`);
+    return declined(s.ambiguous(joinNames(names, tl)));
   }
 
   const { contact } = found;
-  let answer = await ask(ports, `Calling ${contact.name}, okay?`);
+  let answer = await ask(ports, s.calling(contact.name));
   // One retry for noise or a mumbled answer; a second non-answer cancels.
-  if (answer === 'unknown') answer = await ask(ports, PROMPT_YES_OR_NO);
+  if (answer === 'unknown') answer = await ask(ports, s.yesOrNo);
 
   return answer === 'yes'
-    ? { reply: REPLY_CALL_CONFIRMED, dial: contact }
-    : declined(REPLY_CALL_CANCELLED);
+    ? { reply: s.confirmed, dial: contact }
+    : declined(s.cancelled);
 }

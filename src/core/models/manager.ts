@@ -12,8 +12,10 @@ export type ModelSpec = {
   url: string;
   /** Exact size in bytes. A file with any other size is never treated as installed. */
   sizeBytes: number;
-  /** Lowercase hex SHA-256, checked once after the download. */
+  /** Lowercase hex SHA-256 (kept for reference; verified by the JS fallback path). */
   sha256: string;
+  /** Lowercase hex MD5 — checked natively after the download (much faster than JS SHA-256). */
+  md5: string;
   /** Files that look right but are the wrong build (English-only Whisper cannot do Tagalog). */
   wrongVariantFileNames: string[];
 };
@@ -35,6 +37,7 @@ export const MODEL_SPECS: Record<ModelId, ModelSpec> = {
     url: `https://huggingface.co/ggerganov/whisper.cpp/resolve/${WHISPER_REVISION}/ggml-tiny.bin`,
     sizeBytes: 77691713,
     sha256: 'be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21',
+    md5: 'ab7280bbcf29e334f7e3b2a9ac0ca386',
     wrongVariantFileNames: ['ggml-tiny.en.bin'],
   },
   'whisper-base': {
@@ -45,6 +48,7 @@ export const MODEL_SPECS: Record<ModelId, ModelSpec> = {
     url: `https://huggingface.co/ggerganov/whisper.cpp/resolve/${WHISPER_REVISION}/ggml-base.bin`,
     sizeBytes: 147951465,
     sha256: '60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe',
+    md5: '335f34f382e396519b6359d32c786317',
     wrongVariantFileNames: ['ggml-base.en.bin'],
   },
   'qwen3-0.6b': {
@@ -55,6 +59,7 @@ export const MODEL_SPECS: Record<ModelId, ModelSpec> = {
     url: `https://huggingface.co/unsloth/Qwen3-0.6B-GGUF/resolve/${QWEN_REVISION}/Qwen3-0.6B-Q4_K_M.gguf`,
     sizeBytes: 396705472,
     sha256: 'ac2d97712095a558e31573f62f466a3f9d93990898b0ec79d7c974c1780d524a',
+    md5: '45349ac9dec6a388775cbd720be5f8df',
     wrongVariantFileNames: [],
   },
 };

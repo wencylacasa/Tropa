@@ -3,8 +3,9 @@
  * guard for call_contact / sos_alert. Pure logic, no native deps.
  *
  * Expected model output (enforced by the GBNF grammar, but never trusted):
- *   {"intent":"tell_time","target":null,"reply":"It is four forty five"}
- * Any failure resolves to the `unknown` intent.
+ *   {"intent":"tell_time","target":null}
+ * Extra fields (e.g. a stray "reply") are ignored. Any failure resolves to
+ * the `unknown` intent.
  */
 
 import { cleanText, isFuzzyMatch } from '../wake/fuzzyMatch';
@@ -22,28 +23,22 @@ export const INTENTS: readonly Intent[] = [
   'repeat_last',
   'call_contact',
   'sos_alert',
+  'where_am_i',
+  'greet',
+  'thank',
+  'identity',
+  'help',
   'unknown',
 ];
 
-export type LlmResult = {
-  command: ParsedCommand;
-  /** Short English reply suggested by the model (max 10 words), if valid. */
-  reply: string | null;
-};
-
-const UNKNOWN: LlmResult = {
-  command: { intent: 'unknown', target: null, source: 'llm' },
-  reply: null,
-};
-
-const MAX_REPLY_WORDS = 10;
+const UNKNOWN: ParsedCommand = { intent: 'unknown', target: null, source: 'llm' };
 
 function isIntent(value: unknown): value is Intent {
   return typeof value === 'string' && (INTENTS as readonly string[]).includes(value);
 }
 
-/** Parse raw model text into a validated result. Never throws. */
-export function parseLlmOutput(raw: string): LlmResult {
+/** Parse raw model text into a validated command. Never throws. */
+export function parseLlmOutput(raw: string): ParsedCommand {
   if (typeof raw !== 'string') return UNKNOWN;
 
   // Models sometimes wrap JSON in text or code fences; take the outermost braces.
@@ -69,17 +64,10 @@ export function parseLlmOutput(raw: string): LlmResult {
     return UNKNOWN; // wrong type
   }
 
-  let reply: string | null = null;
-  if (typeof obj.reply === 'string') {
-    const trimmed = obj.reply.trim();
-    const words = trimmed.split(/\s+/).filter(Boolean);
-    if (words.length > 0 && words.length <= MAX_REPLY_WORDS) reply = trimmed;
-  }
-
   // target only makes sense for call_contact.
   if (obj.intent !== 'call_contact') target = null;
 
-  return { command: { intent: obj.intent, target, source: 'llm' }, reply };
+  return { intent: obj.intent, target, source: 'llm' };
 }
 
 /** Words that must be present in the transcript before the LLM may raise an SOS. */

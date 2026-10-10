@@ -64,6 +64,8 @@ export interface Feedback {
 
 export interface LlmParser {
   parse(command: string): Promise<ParsedCommand>;
+  /** Optional: freeform short answer when no intent matches. */
+  chat?(command: string, lastExchange?: { command: string; reply: string } | null): Promise<string>;
 }
 
 /** Cached contacts that have a phone number. Empty when permission is missing. */
@@ -93,8 +95,17 @@ export type PipelinePorts = {
   getEmergencyContacts?: () => readonly import('../settings/settings').EmergencyContact[];
   getLocation?: () => { latitude: number; longitude: number } | null;
   sendSms?: (phone: string, message: string) => Promise<void>;
+  /** Optional: reverse-geocoded place for "where am I"; null when unavailable. */
+  describeLocation?: () => Promise<string | null>;
   /** Optional: Used to duck background audio while listening/speaking. */
   audioFocus?: { request: () => boolean; abandon: () => void };
+  /** Optional: media transport keys + volume. Absent on Expo Go / web. */
+  media?: {
+    playPause(): void;
+    next(): void;
+    volumeUp(): void;
+    volumeDown(): void;
+  } | null;
 };
 
 export type TriggerOutcome =
@@ -102,7 +113,7 @@ export type TriggerOutcome =
   | { result: 'discarded_short' }
   | { result: 'discarded_no_wake'; transcript: string }
   | { result: 'no_command' }
-  | { result: 'low_confidence'; transcript: string }
+  | { result: 'low_confidence'; transcript: string; reply?: string }
   | { result: 'handled'; transcript: string; command: string; intent: string; reply: string }
-  | { result: 'not_understood'; transcript: string; command: string }
+  | { result: 'not_understood'; transcript: string; command: string; reply?: string }
   | { result: 'error'; message: string };

@@ -17,6 +17,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.media.ToneGenerator
 import android.util.Base64
+import android.view.KeyEvent
 
 class MyModule : Module() {
   private var audioFocusChangeListener: AudioManager.OnAudioFocusChangeListener? = null
@@ -26,6 +27,18 @@ class MyModule : Module() {
   private fun stopMic() {
     mic?.stop()
     mic = null
+  }
+
+  private fun audioManager(): AudioManager? {
+    val context = appContext.reactContext ?: return null
+    return context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+  }
+
+  /** Simulates a headset/media button press so the active player reacts. */
+  private fun dispatchMediaKey(keyCode: Int) {
+    val audioManager = audioManager() ?: return
+    audioManager.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, keyCode))
+    audioManager.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, keyCode))
   }
 
   override fun definition() = ModuleDefinition {
@@ -177,6 +190,32 @@ class MyModule : Module() {
         flags = Intent.FLAG_ACTIVITY_NEW_TASK
       }
       context.startActivity(intent)
+    }
+
+    /** Headset-style play/pause toggle for whatever player is active. */
+    Function("mediaPlayPause") {
+      dispatchMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
+    }
+
+    Function("mediaNext") {
+      dispatchMediaKey(KeyEvent.KEYCODE_MEDIA_NEXT)
+    }
+
+    /** One step up/down on the music stream, with the system volume panel shown. */
+    Function("volumeUp") {
+      audioManager()?.adjustStreamVolume(
+        AudioManager.STREAM_MUSIC,
+        AudioManager.ADJUST_RAISE,
+        AudioManager.FLAG_SHOW_UI,
+      )
+    }
+
+    Function("volumeDown") {
+      audioManager()?.adjustStreamVolume(
+        AudioManager.STREAM_MUSIC,
+        AudioManager.ADJUST_LOWER,
+        AudioManager.FLAG_SHOW_UI,
+      )
     }
   }
 }
